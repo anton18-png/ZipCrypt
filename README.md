@@ -2,6 +2,9 @@
 
 ZipCrypt - это приложение для шифрования файлов и управления паролями, написанное на Python с использованием ttkbootstrap.
 
+<img width="1920" height="1080" alt="screen" src="https://github.com/user-attachments/assets/97359e80-e906-48e9-af90-e89a4f9ce376" />
+
+
 ## Возможности
 
 ### Шифрование файлов
