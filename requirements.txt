@@ -1,0 +1,9 @@
+# ZipCrypt Dependencies
+# Core dependencies
+pyperclip>=1.8.2
+
+# Telegram integration
+requests>=2.28.0
+
+# Optional dependencies for enhanced functionality
+# cryptography>=3.4.8  # For additional crypto features (uncomment if needed) 
