@@ -8,7 +8,6 @@ import shutil
 import subprocess
 import csv
 from datetime import datetime
-import threading
 import argparse
 from tkinter import simpledialog, messagebox
 
@@ -18,40 +17,48 @@ from files_tab import FilesTab
 from password_manager import PasswordManagerTab
 from crypto_engines import CryptoEngine
 from utils import setup_logging, cleanup_all_temp_directories, test_encryption_functionality
+from master_password_manager import MasterPasswordManager
 
 class ZipCryptApp:
     def __init__(self, root, password_file=None):
         self.root = root
         self.root.title("ZipCrypt - Крипто архиватор и менеджер паролей")
-        self.root.geometry("900x400")
+        self.root.geometry("1000x600")
         
-        # Инициализация настроек по умолчанию
+        # Initialize default settings
         self.default_settings = {
             'file_methods': 'binary_openssl_7zip',
             'compression_method': 'none',
             '7zip_version': '24.08',
             'openssl_version': '3.5.1',
-            'theme': 'darkly',
+            'theme': 'boosterxvapor',
             'telegram_token': '',
             'telegram_chat_id': '',
-            'master_password': '',
             'logging_enabled': False,
             'disable_encryption_test': True
         }
         self.settings = self.default_settings.copy()
         
-        # Загрузка настроек
+        # Initialize master password manager
+        self.master_password_manager = MasterPasswordManager()
+        
+        # Load settings
         self.load_settings()
         
-        # Настройка логирования
+        # Configure logging
         self.configure_logging()
         
-        # Инициализация crypto engine
+        # Initialize crypto engine
         self.crypto_engine = CryptoEngine()
         self.crypto_engine.update_settings(self.settings)
         
         # Clean up old temporary directories
         cleanup_all_temp_directories()
+        
+        # Prompt for master password and verify
+        if not self.verify_master_password():
+            self.root.destroy()
+            return
         
         # Test encryption functionality on startup if not disabled
         if not self.settings.get('disable_encryption_test', False):
@@ -59,11 +66,6 @@ class ZipCryptApp:
                 messagebox.showwarning("Предупреждение", 
                     "Тест шифрования не прошел. Приложение может работать некорректно.")
                 logging.error("Startup encryption test failed")
-        
-        # Prompt for master password
-        if not self.prompt_master_password():
-            self.root.destroy()
-            return
         
         # Create notebook for tabs
         self.notebook = ttk.Notebook(root)
@@ -79,14 +81,15 @@ class ZipCryptApp:
         self.notebook.add(self.password_tab, text="Пароли")
         self.notebook.add(self.settings_tab, text="Настройки")
         
-        # Обновляем настройки во всех компонентах
+        # Update all components
         self.update_all_components()
         
         # Bind tab change event
         self.notebook.bind('<<NotebookTabChanged>>', self.on_tab_changed)
         
-        # Connect settings tab to crypto engine
+        # Connect settings tab to crypto engine and master password manager
         self.settings_tab.set_crypto_engine(self.crypto_engine)
+        self.settings_tab.set_master_password_manager(self.master_password_manager)
         
         # Set master password if available
         self.set_master_password()
@@ -98,11 +101,11 @@ class ZipCryptApp:
         # Apply theme after tabs are created
         self.settings_tab.apply_theme()
         
-        # Обработчик закрытия окна
+        # Handle window closing
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def configure_logging(self):
-        """Настройка логирования на основе настроек"""
+        """Configure logging based on settings"""
         if not self.settings.get('logging_enabled', True):
             logging.disable(logging.CRITICAL)
             return
@@ -117,38 +120,37 @@ class ZipCryptApp:
         )
 
     def load_settings(self):
-        """Загрузка настроек с улучшенной обработкой ошибок"""
+        """Load settings with improved error handling"""
         try:
             if os.path.exists('settings.json'):
                 with open('settings.json', 'r', encoding='utf-8') as f:
                     loaded_settings = json.load(f)
-                    # Объединяем с настройками по умолчанию
+                    # Merge with default settings
                     self.settings = {**self.default_settings, **loaded_settings}
+                logging.info("Settings loaded successfully from settings.json")
+            else:
+                logging.info("No settings.json found, using default settings")
         except Exception as e:
-            logging.error(f"Ошибка загрузки настроек: {e}")
+            logging.error(f"Error loading settings: {e}")
             self.settings = self.default_settings.copy()
 
     def update_all_components(self):
-        """Обновление всех компонентов приложения с текущими настройками"""
-        # Обновляем настройки в движке
+        """Update all application components with current settings"""
         self.crypto_engine.update_settings(self.settings)
         
-        # Обновляем настройки в табах
         if hasattr(self, 'settings_tab'):
             self.settings_tab.update_settings(self.settings)
         if hasattr(self, 'files_tab'):
-            self.files_tab.set_master_password(self.settings.get('master_password', ''))
+            self.files_tab.set_master_password(self.master_password_manager.get_stored_password() or '')
         if hasattr(self, 'password_tab'):
-            self.password_tab.set_master_password(self.settings.get('master_password', ''))
+            self.password_tab.set_master_password(self.master_password_manager.get_stored_password() or '')
 
     def save_settings(self):
-        """Сохранение настроек с проверкой"""
+        """Save settings with validation"""
         try:
-            # Проверяем доступ к файлу настроек
             if not self.check_settings_permissions():
                 return False
                 
-            # Собираем актуальные настройки из всех компонентов
             current_settings = {
                 'file_methods': self.settings_tab.file_methods_var.get(),
                 'compression_method': self.settings_tab.compression_method_var.get(),
@@ -157,31 +159,31 @@ class ZipCryptApp:
                 'theme': self.settings_tab.theme_var.get(),
                 'telegram_token': self.settings_tab.telegram_token_var.get(),
                 'telegram_chat_id': self.settings_tab.telegram_chat_id_var.get(),
-                'master_password': self.settings_tab.master_password_var.get(),
                 'logging_enabled': self.settings_tab.logging_enabled_var.get(),
                 'disable_encryption_test': self.settings_tab.disable_encryption_test_var.get()
             }
             
-            # Обновляем внутренние настройки
             self.settings.update(current_settings)
             
-            # Сохраняем в файл
             with open('settings.json', 'w', encoding='utf-8') as f:
                 json.dump(current_settings, f, indent=2, ensure_ascii=False)
                 
-            # Обновляем все компоненты
+            # Save master password separately
+            self.master_password_manager.set_stored_password(self.settings_tab.master_password_var.get())
+            self.master_password_manager.encrypt_master_password()
+            
             self.update_all_components()
             
-            logging.info("Настройки успешно сохранены")
+            logging.info("Settings successfully saved")
             return True
             
         except Exception as e:
-            logging.error(f"Ошибка сохранения настроек: {e}")
+            logging.error(f"Error saving settings: {e}")
             messagebox.showerror("Ошибка", f"Не удалось сохранить настройки: {str(e)}")
             return False
 
     def check_settings_permissions(self):
-        """Проверка прав доступа к файлу настроек"""
+        """Check permissions for settings file"""
         try:
             with open('settings.json', 'a'):
                 pass
@@ -193,11 +195,10 @@ class ZipCryptApp:
             messagebox.showerror("Ошибка", f"Ошибка доступа к файлу: {str(e)}")
             return False
 
-    def prompt_master_password(self):
-        """Запрос мастер-пароля при запуске"""
-        stored_password = self.settings.get('master_password', '')
-        if not stored_password:
-            return True
+    def verify_master_password(self):
+        """Verify master password at startup"""
+        if not os.path.exists('master_password.enc'):
+            return True  # No master password set
             
         password = simpledialog.askstring(
             "Мастер-пароль", 
@@ -206,30 +207,39 @@ class ZipCryptApp:
             parent=self.root
         )
         
-        if password != stored_password:
-            messagebox.showerror("Ошибка", "Неверный мастер-пароль. Приложение будет закрыто.")
+        if not password:
+            messagebox.showerror("Ошибка", "Мастер-пароль обязателен для доступа")
             return False
             
-        return True
-        
+        try:
+            stored_password = self.master_password_manager.decrypt_master_password(password)
+            if stored_password is None:
+                messagebox.showerror("Ошибка", "Неверный мастер-пароль")
+                return False
+            self.master_password_manager.set_stored_password(stored_password)
+            return True
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Ошибка при проверке мастер-пароля: {str(e)}")
+            return False
+
     def set_master_password(self):
-        """Установка мастер-пароля из настроек"""
-        master_password = self.settings.get('master_password', '')
+        """Set master password from stored value"""
+        master_password = self.master_password_manager.get_stored_password() or ''
         if master_password:
             if hasattr(self.files_tab, 'set_master_password'):
                 self.files_tab.set_master_password(master_password)
             if hasattr(self.password_tab, 'set_master_password'):
                 self.password_tab.set_master_password(master_password)
-            logging.info("Master password set from settings")
-        
+            logging.info("Master password set from stored value")
+
     def on_tab_changed(self, event):
-        """Обработчик смены вкладки"""
+        """Handle tab change event"""
         current_tab = self.notebook.select()
         tab_name = self.notebook.tab(current_tab, "text")
         logging.info(f"Switched to tab: {tab_name}")
 
     def handle_password_file(self, password_file):
-        """Обработка файла паролей"""
+        """Handle password file decryption"""
         if os.path.exists(password_file):
             if self.crypto_engine.decrypt_file(password_file):
                 messagebox.showinfo("Успех", f"Файл {password_file} успешно расшифрован")
@@ -243,13 +253,12 @@ class ZipCryptApp:
             logging.error(f"Password file {password_file} not found")
 
     def on_closing(self):
-        """Обработчик закрытия приложения"""
+        """Handle application closing"""
         self.save_settings()
         cleanup_all_temp_directories()
         self.root.destroy()
 
 def main():
-    # Парсинг аргументов командной строки
     parser = argparse.ArgumentParser(description="ZipCrypt - Password Manager and Encryption Tool")
     parser.add_argument('-p', '--password-file', help="Path to password file to decrypt (e.g., pass.dll)")
     args = parser.parse_args()

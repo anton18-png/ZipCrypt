@@ -5,21 +5,22 @@ import os
 import json
 import logging
 import re
+from master_password_manager import MasterPasswordManager
 
 class SettingsTab(ttk.Frame):
     def __init__(self, parent):
         super().__init__(parent)
         self.root = parent.winfo_toplevel()
         self.crypto_engine = None
+        self.master_password_manager = None
         self.settings = {
             'file_methods': 'binary_openssl_7zip',
-            'compression_method': 'normal',
+            'compression_method': 'none',
             '7zip_version': '24.08',
             'openssl_version': '3.5.1',
-            'theme': 'darkly',
+            'theme': 'boosterxvapor',
             'telegram_token': '',
             'telegram_chat_id': '',
-            'master_password': '',
             'show_passwords': False,
             'logging_enabled': False,
             'disable_encryption_test': False
@@ -31,6 +32,13 @@ class SettingsTab(ttk.Frame):
     def set_crypto_engine(self, crypto_engine):
         """Set the crypto engine reference"""
         self.crypto_engine = crypto_engine
+
+    def set_master_password_manager(self, master_password_manager):
+        """Set the master password manager reference"""
+        self.master_password_manager = master_password_manager
+        # Initialize master password field with stored password if available
+        if self.master_password_manager:
+            self.master_password_var.set(self.master_password_manager.get_stored_password() or '')
 
     def setup_ui(self):
         """Setup the user interface with three columns"""
@@ -127,7 +135,6 @@ class SettingsTab(ttk.Frame):
         section_frame = ttk.Labelframe(parent, text="Тема интерфейса", padding=10)
         section_frame.pack(fill='x', pady=5)
         
-        # Get all available themes
         themes = sorted(self.root.style.theme_names())
         
         self.theme_var = ttk.StringVar(value=self.settings['theme'])
@@ -147,13 +154,10 @@ class SettingsTab(ttk.Frame):
         logger = logging.getLogger()
         
         if not self.settings['logging_enabled']:
-            # Отключаем все handlers
             for handler in logger.handlers[:]:
                 logger.removeHandler(handler)
-            # Устанавливаем уровень выше CRITICAL чтобы ничего не логировалось
             logger.setLevel(logging.CRITICAL + 1)
         else:
-            # Включаем логирование снова (если обработчики были удалены)
             if not logger.handlers:
                 logging.basicConfig(
                     level=logging.INFO,
@@ -213,12 +217,12 @@ class SettingsTab(ttk.Frame):
         """Create Telegram settings section"""
         section_frame = ttk.Labelframe(parent, text="Настройки Telegram", padding=10)
         section_frame.pack(fill='x', pady=5)
-        ttk.Label(section_frame, text="Telegram Bot Token:").pack(anchor='w')
+        ttk.Label(section_frame, text="Токен Telegram:").pack(anchor='w')
         self.telegram_token_var = ttk.StringVar(value=self.settings['telegram_token'])
-        telegram_entry = ttk.Entry(section_frame, textvariable=self.telegram_token_var, width=50)
-        telegram_entry.pack(fill='x', pady=2)
+        telegram_token_entry = ttk.Entry(section_frame, textvariable=self.telegram_token_var, show='*', width=50)
+        telegram_token_entry.pack(fill='x', pady=2)
         ttk.Label(section_frame, text="Chat ID:").pack(anchor='w')
-        self.telegram_chat_id_var = ttk.StringVar(value=self.settings.get('telegram_chat_id', ''))
+        self.telegram_chat_id_var = ttk.StringVar(value=self.settings['telegram_chat_id'])
         chat_id_entry = ttk.Entry(section_frame, textvariable=self.telegram_chat_id_var, width=50)
         chat_id_entry.pack(fill='x', pady=2)
         instructions_text = """Инструкции по настройке Telegram:
@@ -231,7 +235,7 @@ class SettingsTab(ttk.Frame):
         section_frame = ttk.Labelframe(parent, text="Мастер-пароль", padding=10)
         section_frame.pack(fill='x', pady=5)
         ttk.Label(section_frame, text="Мастер-пароль:").pack(anchor='w')
-        self.master_password_var = ttk.StringVar(value=self.settings['master_password'])
+        self.master_password_var = ttk.StringVar(value='')
         master_password_entry = ttk.Entry(section_frame, textvariable=self.master_password_var, show='*', width=50)
         master_password_entry.pack(fill='x', pady=2)
 
@@ -275,7 +279,6 @@ class SettingsTab(ttk.Frame):
                 'theme': self.theme_var.get(),
                 'telegram_token': self.telegram_token_var.get(),
                 'telegram_chat_id': self.telegram_chat_id_var.get(),
-                'master_password': self.master_password_var.get(),
                 'logging_enabled': self.logging_enabled_var.get(),
                 'disable_encryption_test': self.disable_encryption_test_var.get()
             })
@@ -283,10 +286,12 @@ class SettingsTab(ttk.Frame):
                 self.crypto_engine.update_settings(self.settings)
             with open('settings.json', 'w', encoding='utf-8') as f:
                 json.dump(self.settings, f, indent=2, ensure_ascii=False)
+            if self.master_password_manager:
+                self.master_password_manager.set_stored_password(self.master_password_var.get())
+                self.master_password_manager.encrypt_master_password()
             messagebox.showinfo("Успех", "Настройки сохранены")
             self.configure_logging()
             log_settings = self.settings.copy()
-            log_settings['master_password'] = '****'
             log_settings['telegram_token'] = '****' if log_settings['telegram_token'] else ''
             if self.settings['logging_enabled']:
                 logging.info(f"Settings saved successfully: {log_settings}")
@@ -307,7 +312,6 @@ class SettingsTab(ttk.Frame):
                 'theme': 'darkly',
                 'telegram_token': '',
                 'telegram_chat_id': '',
-                'master_password': '',
                 'show_passwords': False,
                 'logging_enabled': True,
                 'disable_encryption_test': False
@@ -319,11 +323,14 @@ class SettingsTab(ttk.Frame):
             self.theme_var.set(self.settings['theme'])
             self.telegram_token_var.set(self.settings['telegram_token'])
             self.telegram_chat_id_var.set(self.settings['telegram_chat_id'])
-            self.master_password_var.set(self.settings['master_password'])
+            self.master_password_var.set('')
             self.logging_enabled_var.set(self.settings['logging_enabled'])
             self.disable_encryption_test_var.set(self.settings['disable_encryption_test'])
             if self.crypto_engine:
                 self.crypto_engine.update_settings(self.settings)
+            if self.master_password_manager:
+                self.master_password_manager.set_stored_password('')
+                self.master_password_manager.encrypt_master_password()
             self.apply_theme()
             self.configure_logging()
             if self.settings['logging_enabled']:
@@ -334,7 +341,6 @@ class SettingsTab(ttk.Frame):
         try:
             results = []
             
-            # Проверяем существование папки 7zip
             if not os.path.exists('7zip'):
                 results.append("✗ Папка '7zip' не найдена")
             else:
@@ -346,7 +352,6 @@ class SettingsTab(ttk.Frame):
                     else:
                         results.append(f"✗ 7zip {version}: не найден")
             
-            # Проверяем существование папки OpenSSL
             if not os.path.exists('OpenSSL'):
                 results.append("✗ Папка 'OpenSSL' не найдена")
             else:
@@ -380,18 +385,10 @@ class SettingsTab(ttk.Frame):
             self.theme_var.set(self.settings.get('theme', 'darkly'))
             self.telegram_token_var.set(self.settings.get('telegram_token', ''))
             self.telegram_chat_id_var.set(self.settings.get('telegram_chat_id', ''))
-            self.master_password_var.set(self.settings.get('master_password', ''))
             self.logging_enabled_var.set(self.settings.get('logging_enabled', True))
             self.disable_encryption_test_var.set(self.settings.get('disable_encryption_test', False))
             self.apply_theme()
             self.configure_logging()
-
-    # def configure_logging(self):
-    #     """Configure logging based on settings"""
-    #     if not self.settings['logging_enabled']:
-    #         logging.getLogger().setLevel(logging.CRITICAL)
-    #     else:
-    #         logging.getLogger().setLevel(logging.INFO)
 
     def toggle_logging(self):
         """Toggle logging state and reconfigure"""
