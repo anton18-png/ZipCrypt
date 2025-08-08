@@ -1,10 +1,12 @@
 import ttkbootstrap as ttk
 from ttkbootstrap import Style
-from tkinter import messagebox, filedialog
+from tkinter import messagebox
 import os
 import json
 import logging
 import re
+import tempfile
+import shutil
 from master_password_manager import MasterPasswordManager
 
 class SettingsTab(ttk.Frame):
@@ -18,12 +20,13 @@ class SettingsTab(ttk.Frame):
             'compression_method': 'none',
             '7zip_version': '24.08',
             'openssl_version': '3.5.1',
-            'theme': 'boosterxvapor',
+            'theme': 'litera',
             'telegram_token': '',
             'telegram_chat_id': '',
             'show_passwords': False,
             'logging_enabled': False,
-            'disable_encryption_test': False
+            'disable_encryption_test': False,
+            'send_password_in_caption': False
         }
         self.setup_ui()
         self.apply_theme()
@@ -36,7 +39,6 @@ class SettingsTab(ttk.Frame):
     def set_master_password_manager(self, master_password_manager):
         """Set the master password manager reference"""
         self.master_password_manager = master_password_manager
-        # Initialize master password field with stored password if available
         if self.master_password_manager:
             self.master_password_var.set(self.master_password_manager.get_stored_password() or '')
 
@@ -119,159 +121,114 @@ class SettingsTab(ttk.Frame):
         """Create version selection section"""
         section_frame = ttk.Labelframe(parent, text="Версии программ", padding=10)
         section_frame.pack(fill='x', pady=5)
-        ttk.Label(section_frame, text="Версия 7zip:").pack(anchor='w')
+        
+        ttk.Label(section_frame, text="7zip версия:").pack(anchor='w')
         self.sevenzip_version_var = ttk.StringVar(value=self.settings['7zip_version'])
-        sevenzip_versions = self.get_available_7zip_versions()
-        sevenzip_combo = ttk.Combobox(section_frame, textvariable=self.sevenzip_version_var, values=sevenzip_versions, state='readonly')
-        sevenzip_combo.pack(fill='x', pady=2)
-        ttk.Label(section_frame, text="Версия OpenSSL:").pack(anchor='w')
+        ttk.Combobox(section_frame, textvariable=self.sevenzip_version_var, 
+                    values=['24.08', '920', '2501_extra']).pack(fill='x', pady=2)
+        
+        ttk.Label(section_frame, text="OpenSSL версия:").pack(anchor='w')
         self.openssl_version_var = ttk.StringVar(value=self.settings['openssl_version'])
-        openssl_versions = self.get_available_openssl_versions()
-        openssl_combo = ttk.Combobox(section_frame, textvariable=self.openssl_version_var, values=openssl_versions, state='readonly')
-        openssl_combo.pack(fill='x', pady=2)
+        ttk.Combobox(section_frame, textvariable=self.openssl_version_var, 
+                    values=['3.5.1', '3.5.1_Light', '3.2.4']).pack(fill='x', pady=2)
 
     def create_theme_section(self, parent):
         """Create theme selection section"""
         section_frame = ttk.Labelframe(parent, text="Тема интерфейса", padding=10)
         section_frame.pack(fill='x', pady=5)
-        
-        themes = sorted(self.root.style.theme_names())
-        
         self.theme_var = ttk.StringVar(value=self.settings['theme'])
-        ttk.Label(section_frame, text="Выберите тему:").pack(anchor='w')
-        
-        theme_combo = ttk.Combobox(
-            section_frame, 
-            textvariable=self.theme_var, 
-            values=themes,
-            state='readonly'
-        )
-        theme_combo.pack(fill='x', pady=2)
-        theme_combo.bind('<<ComboboxSelected>>', lambda e: self.apply_theme())
-
-    def configure_logging(self):
-        """Configure logging based on settings"""
-        logger = logging.getLogger()
-        
-        if not self.settings['logging_enabled']:
-            for handler in logger.handlers[:]:
-                logger.removeHandler(handler)
-            logger.setLevel(logging.CRITICAL + 1)
-        else:
-            if not logger.handlers:
-                logging.basicConfig(
-                    level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s',
-                    handlers=[
-                        logging.FileHandler('zipcrypt.log', encoding='utf-8'),
-                        logging.StreamHandler()
-                    ]
-                )
-            else:
-                logger.setLevel(logging.INFO)
-
-    def create_advanced_section(self, parent):
-        """Create advanced settings section"""
-        section_frame = ttk.Labelframe(parent, text="Дополнительно", padding=10)
-        section_frame.pack(fill='x', pady=5)
-        self.disable_encryption_test_var = ttk.BooleanVar(value=self.settings['disable_encryption_test'])
-        ttk.Checkbutton(section_frame, text="Отключить проверку шифрования при запуске", variable=self.disable_encryption_test_var).pack(anchor='w', pady=2)
-
-    def apply_theme(self):
-        """Apply selected theme to all tabs and root"""
-        theme = self.theme_var.get()
-        self.root.style.theme_use(theme)
-        for widget in self.root.winfo_children():
-            self._apply_theme_to_widget(widget)
-        self.root.update_idletasks()
-
-    def _apply_theme_to_widget(self, widget):
-        """Apply theme to widget and its children"""
-        try:
-            widget_type = widget.winfo_class()
-            if widget_type in ['TFrame', 'Frame', 'Labelframe']:
-                widget.configure(style='TFrame')
-            elif widget_type in ['TLabel', 'Label']:
-                widget.configure(style='TLabel')
-            elif widget_type in ['TButton', 'Button']:
-                widget.configure(style='TButton')
-            elif widget_type in ['TEntry', 'Entry']:
-                widget.configure(style='TEntry')
-            elif widget_type in ['TCheckbutton', 'Checkbutton']:
-                widget.configure(style='TCheckbutton')
-            elif widget_type in ['TRadiobutton', 'Radiobutton']:
-                widget.configure(style='TRadiobutton')
-            elif widget_type in ['TNotebook', 'Notebook']:
-                widget.configure(style='TNotebook')
-            elif widget_type in ['Treeview']:
-                widget.configure(style='Treeview')
-            elif widget_type in ['TCombobox', 'Combobox']:
-                widget.configure(style='TCombobox')
-            widget.update_idletasks()
-        except Exception:
-            pass
-        for child in widget.winfo_children():
-            self._apply_theme_to_widget(child)
+        themes = sorted(self.root.style.theme_names())
+        ttk.Combobox(section_frame, textvariable=self.theme_var, values=themes).pack(fill='x')
 
     def create_telegram_section(self, parent):
         """Create Telegram settings section"""
         section_frame = ttk.Labelframe(parent, text="Настройки Telegram", padding=10)
         section_frame.pack(fill='x', pady=5)
-        ttk.Label(section_frame, text="Токен Telegram:").pack(anchor='w')
+        ttk.Label(section_frame, text="Токен:").pack(anchor='w')
         self.telegram_token_var = ttk.StringVar(value=self.settings['telegram_token'])
-        telegram_token_entry = ttk.Entry(section_frame, textvariable=self.telegram_token_var, show='*', width=50)
-        telegram_token_entry.pack(fill='x', pady=2)
+        ttk.Entry(section_frame, textvariable=self.telegram_token_var, width=40).pack(fill='x', pady=2)
         ttk.Label(section_frame, text="Chat ID:").pack(anchor='w')
         self.telegram_chat_id_var = ttk.StringVar(value=self.settings['telegram_chat_id'])
-        chat_id_entry = ttk.Entry(section_frame, textvariable=self.telegram_chat_id_var, width=50)
-        chat_id_entry.pack(fill='x', pady=2)
-        instructions_text = """Инструкции по настройке Telegram:
-1. Создайте бота через @BotFather: отправьте /newbot, следуйте инструкциям, скопируйте токен
-2. Получите Chat ID: отправьте сообщение боту, перейдите по https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates, найдите "chat":{"id": число}, скопируйте в поле Chat ID"""
-        ttk.Label(section_frame, text=instructions_text, wraplength=500).pack(anchor='w', pady=5)
+        ttk.Entry(section_frame, textvariable=self.telegram_chat_id_var, width=40).pack(fill='x', pady=2)
+        self.send_password_in_caption_var = ttk.BooleanVar(value=self.settings['send_password_in_caption'])
+        ttk.Checkbutton(section_frame, text="Отправлять пароль в подписи Telegram", 
+                       variable=self.send_password_in_caption_var).pack(anchor='w', pady=5)
+        ttk.Button(section_frame, text="Тестировать подключение", command=self.test_telegram_connection, 
+                  bootstyle="info-outline").pack(anchor='w', pady=5)
 
     def create_master_password_section(self, parent):
         """Create master password section"""
         section_frame = ttk.Labelframe(parent, text="Мастер-пароль", padding=10)
         section_frame.pack(fill='x', pady=5)
-        ttk.Label(section_frame, text="Мастер-пароль:").pack(anchor='w')
-        self.master_password_var = ttk.StringVar(value='')
-        master_password_entry = ttk.Entry(section_frame, textvariable=self.master_password_var, show='*', width=50)
-        master_password_entry.pack(fill='x', pady=2)
+        self.master_password_var = ttk.StringVar()
+        ttk.Label(section_frame, text="Новый мастер-пароль:").pack(anchor='w')
+        ttk.Entry(section_frame, textvariable=self.master_password_var, show='*').pack(fill='x', pady=2)
 
     def create_logging_section(self, parent):
-        """Create logging control section"""
+        """Create logging settings section"""
         section_frame = ttk.Labelframe(parent, text="Логирование", padding=10)
         section_frame.pack(fill='x', pady=5)
         self.logging_enabled_var = ttk.BooleanVar(value=self.settings['logging_enabled'])
-        ttk.Checkbutton(section_frame, text="Включить логирование", variable=self.logging_enabled_var, command=self.toggle_logging).pack(anchor='w', pady=2)
+        ttk.Checkbutton(section_frame, text="Включить логирование", 
+                       variable=self.logging_enabled_var, command=self.toggle_logging).pack(anchor='w')
+        self.disable_encryption_test_var = ttk.BooleanVar(value=self.settings['disable_encryption_test'])
+        ttk.Checkbutton(section_frame, text="Отключить тест шифрования при запуске", 
+                       variable=self.disable_encryption_test_var).pack(anchor='w')
+
+    def create_advanced_section(self, parent):
+        """Create advanced settings section"""
+        section_frame = ttk.Labelframe(parent, text="Дополнительно", padding=10)
+        section_frame.pack(fill='x', pady=5)
+        ttk.Button(section_frame, text="Проверить пути", command=self.check_paths, 
+                  bootstyle="secondary-outline").pack(anchor='w', pady=2)
 
     def create_buttons(self, parent):
-        """Create action buttons"""
+        """Create save and reset buttons"""
         button_frame = ttk.Frame(parent)
         button_frame.pack(fill='x', pady=10)
-        ttk.Button(button_frame, text="Сохранить настройки", command=self.save_settings).pack(side='left', padx=5)
-        ttk.Button(button_frame, text="Сбросить к умолчаниям", command=self.reset_settings).pack(side='left', padx=5)
-        ttk.Button(button_frame, text="Проверить пути", command=self.check_paths).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="Сохранить", command=self.save_settings, 
+                  bootstyle="primary-outline").pack(side='left', padx=5)
+        ttk.Button(button_frame, text="Сбросить", command=self.reset_settings, 
+                  bootstyle="secondary-outline").pack(side='left', padx=5)
 
-    def get_available_7zip_versions(self):
-        """Get available 7zip versions"""
-        return ['24.08', '9.20', '25.01_extra']
+    def apply_theme(self):
+        """Apply selected theme"""
+        try:
+            theme = self.settings['theme']
+            self.root.style.theme_use(theme)  # Use theme_use instead of direct assignment
+            logging.info(f"Applied theme: {theme}")
+        except Exception as e:
+            logging.error(f"Error applying theme: {e}")
+            messagebox.showerror("Ошибка", f"Не удалось применить тему: {str(e)}")
 
-    def get_available_openssl_versions(self):
-        """Get available OpenSSL versions"""
-        versions = []
-        if os.path.exists('OpenSSL'):
-            for item in os.listdir('OpenSSL'):
-                if item.startswith('OpenSSL_'):
-                    version = item.replace('OpenSSL_', '')
-                    versions.append(version)
-        return versions if versions else ['3.5.1', '3.5.1_Light', '3.2.4']
+    def configure_logging(self):
+        """Configure logging based on settings"""
+        if self.settings['logging_enabled']:
+            logging.getLogger().setLevel(logging.INFO)
+        else:
+            logging.getLogger().setLevel(logging.CRITICAL)
 
     def save_settings(self):
-        """Save current settings"""
+        """Save settings to file"""
         try:
-            self.settings.update({
+            settings_file = 'settings.json'
+            settings_dir = os.path.dirname(settings_file) or '.'
+            logging.debug(f"Checking write permissions for {settings_dir}")
+            
+            # Check write permissions
+            if not os.access(settings_dir, os.W_OK):
+                logging.error(f"No write permission for directory: {settings_dir}")
+                messagebox.showerror("Ошибка", f"Нет прав на запись в директорию: {settings_dir}")
+                return False
+
+            # Validate Telegram token
+            token = self.telegram_token_var.get()
+            if token and not re.match(r'^\d+:[A-Za-z0-9_-]+$', token):
+                messagebox.showerror("Ошибка", "Неверный формат токена Telegram. Пример: 123456:ABC-DEF...")
+                logging.error("Invalid Telegram token format")
+                return False
+                
+            new_settings = {
                 'file_methods': self.file_methods_var.get(),
                 'compression_method': self.compression_method_var.get(),
                 '7zip_version': self.sevenzip_version_var.get(),
@@ -280,61 +237,81 @@ class SettingsTab(ttk.Frame):
                 'telegram_token': self.telegram_token_var.get(),
                 'telegram_chat_id': self.telegram_chat_id_var.get(),
                 'logging_enabled': self.logging_enabled_var.get(),
-                'disable_encryption_test': self.disable_encryption_test_var.get()
-            })
+                'disable_encryption_test': self.disable_encryption_test_var.get(),
+                'send_password_in_caption': self.send_password_in_caption_var.get()
+            }
+            
+            # Try writing directly
+            try:
+                with open(settings_file, 'w', encoding='utf-8') as f:
+                    json.dump(new_settings, f, indent=4, ensure_ascii=False)
+                    logging.info(f"Settings saved to {settings_file}")
+            except PermissionError:
+                # Fallback to temporary file
+                temp_fd, temp_path = tempfile.mkstemp(suffix='.json', prefix='settings_')
+                try:
+                    with os.fdopen(temp_fd, 'w', encoding='utf-8') as temp_f:
+                        json.dump(new_settings, temp_f, indent=4, ensure_ascii=False)
+                    shutil.move(temp_path, settings_file)
+                    logging.info(f"Settings saved via temp file to {settings_file}")
+                except Exception as e:
+                    logging.error(f"Failed to save settings via temp file: {e}")
+                    os.remove(temp_path) if os.path.exists(temp_path) else None
+                    raise
+                
+            self.settings.update(new_settings)
+            
             if self.crypto_engine:
                 self.crypto_engine.update_settings(self.settings)
-            with open('settings.json', 'w', encoding='utf-8') as f:
-                json.dump(self.settings, f, indent=2, ensure_ascii=False)
+                
             if self.master_password_manager:
                 self.master_password_manager.set_stored_password(self.master_password_var.get())
                 self.master_password_manager.encrypt_master_password()
-            messagebox.showinfo("Успех", "Настройки сохранены")
-            self.configure_logging()
-            log_settings = self.settings.copy()
-            log_settings['telegram_token'] = '****' if log_settings['telegram_token'] else ''
-            if self.settings['logging_enabled']:
-                logging.info(f"Settings saved successfully: {log_settings}")
+                
             self.apply_theme()
+            self.configure_logging()
+            
+            messagebox.showinfo("Успех", "Настройки успешно сохранены")
+            return True
+            
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка при сохранении настроек: {e}")
-            if self.settings['logging_enabled']:
-                logging.error(f"Error saving settings: {e}")
+            logging.error(f"Error saving settings: {str(e)}")
+            messagebox.showerror("Ошибка", f"Не удалось сохранить настройки: {str(e)}")
+            return False
 
     def reset_settings(self):
-        """Reset settings to defaults"""
-        if messagebox.askyesno("Подтверждение", "Сбросить все настройки к значениям по умолчанию?"):
-            self.settings = {
-                'file_methods': 'binary_openssl_7zip',
-                'compression_method': 'normal',
-                '7zip_version': '24.08',
-                'openssl_version': '3.5.1',
-                'theme': 'darkly',
-                'telegram_token': '',
-                'telegram_chat_id': '',
-                'show_passwords': False,
-                'logging_enabled': True,
-                'disable_encryption_test': False
-            }
-            self.file_methods_var.set(self.settings['file_methods'])
-            self.compression_method_var.set(self.settings['compression_method'])
-            self.sevenzip_version_var.set(self.settings['7zip_version'])
-            self.openssl_version_var.set(self.settings['openssl_version'])
-            self.theme_var.set(self.settings['theme'])
-            self.telegram_token_var.set(self.settings['telegram_token'])
-            self.telegram_chat_id_var.set(self.settings['telegram_chat_id'])
-            self.master_password_var.set('')
-            self.logging_enabled_var.set(self.settings['logging_enabled'])
-            self.disable_encryption_test_var.set(self.settings['disable_encryption_test'])
-            if self.crypto_engine:
-                self.crypto_engine.update_settings(self.settings)
-            if self.master_password_manager:
-                self.master_password_manager.set_stored_password('')
-                self.master_password_manager.encrypt_master_password()
-            self.apply_theme()
-            self.configure_logging()
-            if self.settings['logging_enabled']:
-                messagebox.showinfo("Успех", "Настройки сброшены к значениям по умолчанию")
+        """Reset settings to default"""
+        self.settings = {
+            'file_methods': 'binary_openssl_7zip',
+            'compression_method': 'none',
+            '7zip_version': '24.08',
+            'openssl_version': '3.5.1',
+            'theme': 'litera',
+            'telegram_token': '',
+            'telegram_chat_id': '',
+            'show_passwords': False,
+            'logging_enabled': False,
+            'disable_encryption_test': False,
+            'send_password_in_caption': False
+        }
+        self.file_methods_var.set(self.settings['file_methods'])
+        self.compression_method_var.set(self.settings['compression_method'])
+        self.sevenzip_version_var.set(self.settings['7zip_version'])
+        self.openssl_version_var.set(self.settings['openssl_version'])
+        self.theme_var.set(self.settings['theme'])
+        self.telegram_token_var.set(self.settings['telegram_token'])
+        self.telegram_chat_id_var.set(self.settings['telegram_chat_id'])
+        self.logging_enabled_var.set(self.settings['logging_enabled'])
+        self.disable_encryption_test_var.set(self.settings['disable_encryption_test'])
+        self.send_password_in_caption_var.set(self.settings['send_password_in_caption'])
+        if self.crypto_engine:
+            self.crypto_engine.update_settings(self.settings)
+        if self.master_password_manager:
+            self.master_password_manager.set_stored_password('')
+            self.master_password_manager.encrypt_master_password()
+        self.apply_theme()
+        self.configure_logging()
+        messagebox.showinfo("Успех", "Настройки сброшены к значениям по умолчанию")
 
     def check_paths(self):
         """Check if required executables are available"""
@@ -370,6 +347,29 @@ class SettingsTab(ttk.Frame):
             messagebox.showerror("Ошибка", f"Ошибка при проверке путей: {e}")
             logging.error(f"Path check error: {e}")
 
+    def get_available_7zip_versions(self):
+        """Get available 7zip versions"""
+        return ['24.08', '920', '2501_extra']
+
+    def get_available_openssl_versions(self):
+        """Get available OpenSSL versions"""
+        return ['3.5.1', '3.5.1_Light', '3.2.4']
+
+    def test_telegram_connection(self):
+        """Test Telegram connection"""
+        from telegram_utils import TelegramUtils
+        telegram_token = self.telegram_token_var.get()
+        telegram_chat_id = self.telegram_chat_id_var.get()
+        if not telegram_token or not telegram_chat_id:
+            messagebox.showerror("Ошибка", "Укажите токен и Chat ID")
+            return
+        telegram_utils = TelegramUtils(telegram_token, telegram_chat_id)
+        success, message = telegram_utils.test_connection()
+        if success:
+            messagebox.showinfo("Успех", "Подключение к Telegram успешно")
+        else:
+            messagebox.showerror("Ошибка", f"Ошибка подключения: {message}\nПроверьте токен у @BotFather и Chat ID у @GetIDsBot.")
+
     def get_settings(self):
         """Get current settings"""
         return self.settings.copy()
@@ -379,14 +379,15 @@ class SettingsTab(ttk.Frame):
         self.settings.update(settings)
         if hasattr(self, 'file_methods_var'):
             self.file_methods_var.set(self.settings.get('file_methods', 'binary_openssl_7zip'))
-            self.compression_method_var.set(self.settings.get('compression_method', 'normal'))
+            self.compression_method_var.set(self.settings.get('compression_method', 'none'))
             self.sevenzip_version_var.set(self.settings.get('7zip_version', '24.08'))
             self.openssl_version_var.set(self.settings.get('openssl_version', '3.5.1'))
-            self.theme_var.set(self.settings.get('theme', 'darkly'))
+            self.theme_var.set(self.settings.get('theme', 'litera'))
             self.telegram_token_var.set(self.settings.get('telegram_token', ''))
             self.telegram_chat_id_var.set(self.settings.get('telegram_chat_id', ''))
-            self.logging_enabled_var.set(self.settings.get('logging_enabled', True))
+            self.logging_enabled_var.set(self.settings.get('logging_enabled', False))
             self.disable_encryption_test_var.set(self.settings.get('disable_encryption_test', False))
+            self.send_password_in_caption_var.set(self.settings.get('send_password_in_caption', False))
             self.apply_theme()
             self.configure_logging()
 
