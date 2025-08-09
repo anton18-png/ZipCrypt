@@ -23,9 +23,11 @@ class SettingsTab(ttk.Frame):
             '7zip_version': '24.08',
             'zstd_version': '1.5.7',
             'openssl_version': '3.5.1',
-            'cipher_algorithm': 'aes-256-cbc',  # Changed from aes_algorithm to cipher_algorithm
+            'cipher_algorithm': 'aes-256-cbc',
             'use_salt': True,
             'use_pbkdf2': True,
+            'use_pbkdf2_iterations': True,
+            'pbkdf2_iterations': 200000,
             'theme': 'litera',
             'telegram_token': '',
             'telegram_chat_id': '',
@@ -106,24 +108,26 @@ class SettingsTab(ttk.Frame):
         for value, text in methods:
             ttk.Radiobutton(section_frame, text=text, variable=self.file_methods_var, value=value).pack(anchor='w', pady=2)
         
-        # Cipher Algorithm Selection
-        # ttk.Label(section_frame, text="Алгоритм шифрования:").pack(anchor='w', pady=2)
-        # self.cipher_algorithm_var = ttk.StringVar(value=self.settings['cipher_algorithm'])
-        # ttk.Combobox(section_frame, textvariable=self.cipher_algorithm_var, 
-        #              values=self.ciphers).pack(fill='x', pady=2)
-
         ttk.Label(section_frame, text="Алгоритм шифрования:").pack(anchor='w', pady=2)
         self.cipher_algorithm_var = ttk.StringVar(value=self.settings['cipher_algorithm'])
         ttk.Combobox(section_frame, textvariable=self.cipher_algorithm_var, 
                      values=self.ciphers).pack(fill='x', pady=2)
         
-        # Salt and PBKDF2 Checkboxes
         self.use_salt_var = ttk.BooleanVar(value=self.settings['use_salt'])
         ttk.Checkbutton(section_frame, text="Использовать соль", 
-                       variable=self.use_salt_var).pack(anchor='w', pady=2)
+                        variable=self.use_salt_var).pack(anchor='w', pady=2)
+        
         self.use_pbkdf2_var = ttk.BooleanVar(value=self.settings['use_pbkdf2'])
         ttk.Checkbutton(section_frame, text="Использовать PBKDF2", 
-                       variable=self.use_pbkdf2_var).pack(anchor='w', pady=2)
+                        variable=self.use_pbkdf2_var).pack(anchor='w', pady=2)
+        
+        self.use_pbkdf2_iterations_var = ttk.BooleanVar(value=self.settings['use_pbkdf2_iterations'])
+        ttk.Checkbutton(section_frame, text="Использовать PBKDF2 итерации", 
+                        variable=self.use_pbkdf2_iterations_var).pack(anchor='w', pady=2)
+        
+        ttk.Label(section_frame, text="PBKDF2 итерации:").pack(anchor='w', pady=2)
+        self.pbkdf2_iterations_var = ttk.StringVar(value=str(self.settings['pbkdf2_iterations']))
+        ttk.Entry(section_frame, textvariable=self.pbkdf2_iterations_var).pack(fill='x', pady=2)
 
     def create_compression_section(self, parent):
         """Create compression settings section"""
@@ -172,7 +176,7 @@ class SettingsTab(ttk.Frame):
         ttk.Combobox(section_frame, textvariable=self.theme_var, values=themes).pack(fill='x')
 
     def create_telegram_section(self, parent):
-        """Create Telegram settings section"""
+        """Create Telegram HRU"""
         section_frame = ttk.Labelframe(parent, text="Настройки Telegram", padding=10)
         section_frame.pack(fill='x', pady=5)
         ttk.Label(section_frame, text="Токен:").pack(anchor='w')
@@ -183,9 +187,9 @@ class SettingsTab(ttk.Frame):
         ttk.Entry(section_frame, textvariable=self.telegram_chat_id_var, width=40).pack(fill='x', pady=2)
         self.send_password_in_caption_var = ttk.BooleanVar(value=self.settings['send_password_in_caption'])
         ttk.Checkbutton(section_frame, text="Отправлять пароль в подписи Telegram", 
-                       variable=self.send_password_in_caption_var).pack(anchor='w', pady=5)
+                        variable=self.send_password_in_caption_var).pack(anchor='w', pady=5)
         ttk.Button(section_frame, text="Тестировать подключение", command=self.test_telegram_connection, 
-                  bootstyle="info-outline").pack(anchor='w', pady=5)
+                   bootstyle="info-outline").pack(anchor='w', pady=5)
 
     def create_master_password_section(self, parent):
         """Create master password section"""
@@ -201,29 +205,29 @@ class SettingsTab(ttk.Frame):
         section_frame.pack(fill='x', pady=5)
         self.logging_enabled_var = ttk.BooleanVar(value=self.settings['logging_enabled'])
         ttk.Checkbutton(section_frame, text="Включить логирование", 
-                       variable=self.logging_enabled_var, command=self.toggle_logging).pack(anchor='w')
+                        variable=self.logging_enabled_var, command=self.toggle_logging).pack(anchor='w')
         self.disable_encryption_test_var = ttk.BooleanVar(value=self.settings['disable_encryption_test'])
         ttk.Checkbutton(section_frame, text="Отключить тест шифрования при запуске", 
-                       variable=self.disable_encryption_test_var).pack(anchor='w')
+                        variable=self.disable_encryption_test_var).pack(anchor='w')
         self.delete_temp_files_var = ttk.BooleanVar(value=self.settings['delete_temp_files'])
         ttk.Checkbutton(section_frame, text="Удалять временные файлы", 
-                       variable=self.delete_temp_files_var).pack(anchor='w')
+                        variable=self.delete_temp_files_var).pack(anchor='w')
 
     def create_advanced_section(self, parent):
         """Create advanced settings section"""
         section_frame = ttk.Labelframe(parent, text="Дополнительно", padding=10)
         section_frame.pack(fill='x', pady=5)
         ttk.Button(section_frame, text="Проверить пути", command=self.check_paths, 
-                  bootstyle="secondary-outline").pack(anchor='w', pady=2)
+                   bootstyle="secondary-outline").pack(anchor='w', pady=2)
 
     def create_buttons(self, parent):
         """Create save and reset buttons"""
         button_frame = ttk.Frame(parent)
         button_frame.pack(fill='x', pady=10)
         ttk.Button(button_frame, text="Сохранить", command=self.save_settings, 
-                  bootstyle="primary-outline").pack(side='left', padx=5)
+                   bootstyle="primary-outline").pack(side='left', padx=5)
         ttk.Button(button_frame, text="Сбросить", command=self.reset_settings, 
-                  bootstyle="secondary-outline").pack(side='left', padx=5)
+                   bootstyle="secondary-outline").pack(side='left', padx=5)
 
     def apply_theme(self):
         """Apply selected theme"""
@@ -259,7 +263,20 @@ class SettingsTab(ttk.Frame):
                 messagebox.showerror("Ошибка", "Неверный формат токена Telegram. Пример: 123456:ABC-DEF...")
                 logging.error("Invalid Telegram token format")
                 return False
-                
+
+            # Validate PBKDF2 iterations if enabled
+            if self.use_pbkdf2_iterations_var.get():
+                try:
+                    iterations = int(self.pbkdf2_iterations_var.get())
+                    if iterations <= 0:
+                        raise ValueError("PBKDF2 iterations must be a positive integer")
+                except ValueError:
+                    messagebox.showerror("Ошибка", "PBKDF2 итерации должны быть положительным целым числом")
+                    logging.error("Invalid PBKDF2 iterations value")
+                    return False
+            else:
+                iterations = 200000  # Default value when iterations are disabled
+
             new_settings = {
                 'file_methods': self.file_methods_var.get(),
                 'compression_method': self.compression_method_var.get(),
@@ -269,6 +286,8 @@ class SettingsTab(ttk.Frame):
                 'cipher_algorithm': self.cipher_algorithm_var.get(),
                 'use_salt': self.use_salt_var.get(),
                 'use_pbkdf2': self.use_pbkdf2_var.get(),
+                'use_pbkdf2_iterations': self.use_pbkdf2_iterations_var.get(),
+                'pbkdf2_iterations': iterations,
                 'theme': self.theme_var.get(),
                 'telegram_token': self.telegram_token_var.get(),
                 'telegram_chat_id': self.telegram_chat_id_var.get(),
@@ -325,6 +344,8 @@ class SettingsTab(ttk.Frame):
             'cipher_algorithm': 'aes-256-cbc',
             'use_salt': True,
             'use_pbkdf2': True,
+            'use_pbkdf2_iterations': True,
+            'pbkdf2_iterations': 200000,
             'theme': 'litera',
             'telegram_token': '',
             'telegram_chat_id': '',
@@ -342,6 +363,8 @@ class SettingsTab(ttk.Frame):
         self.cipher_algorithm_var.set(self.settings['cipher_algorithm'])
         self.use_salt_var.set(self.settings['use_salt'])
         self.use_pbkdf2_var.set(self.settings['use_pbkdf2'])
+        self.use_pbkdf2_iterations_var.set(self.settings['use_pbkdf2_iterations'])
+        self.pbkdf2_iterations_var.set(str(self.settings['pbkdf2_iterations']))
         self.theme_var.set(self.settings['theme'])
         self.telegram_token_var.set(self.settings['telegram_token'])
         self.telegram_chat_id_var.set(self.settings['telegram_chat_id'])
@@ -446,6 +469,8 @@ class SettingsTab(ttk.Frame):
             self.cipher_algorithm_var.set(self.settings.get('cipher_algorithm', 'aes-256-cbc'))
             self.use_salt_var.set(self.settings.get('use_salt', True))
             self.use_pbkdf2_var.set(self.settings.get('use_pbkdf2', True))
+            self.use_pbkdf2_iterations_var.set(self.settings.get('use_pbkdf2_iterations', True))
+            self.pbkdf2_iterations_var.set(str(self.settings.get('pbkdf2_iterations', 200000)))
             self.theme_var.set(self.settings.get('theme', 'litera'))
             self.telegram_token_var.set(self.settings.get('telegram_token', ''))
             self.telegram_chat_id_var.set(self.settings.get('telegram_chat_id', ''))

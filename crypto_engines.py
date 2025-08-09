@@ -16,6 +16,8 @@ class CryptoEngine:
             'cipher_algorithm': 'aes-256-cbc',
             'use_salt': True,
             'use_pbkdf2': True,
+            'use_pbkdf2_iterations': True,
+            'pbkdf2_iterations': 200000,
             'theme': 'Classic',
             'telegram_token': '',
             'master_password': '',
@@ -67,10 +69,13 @@ class CryptoEngine:
         if any(unsupported in cipher for unsupported in self.unsupported_ciphers):
             logging.warning(f"Cipher {cipher} may not support -salt or -pbkdf2. Skipping these options.")
         else:
-            if use_salt:
+            if use_salt and self.settings.get('use_salt', True):
                 cmd += " -salt"
-            if use_pbkdf2:
+            if use_pbkdf2 and self.settings.get('use_pbkdf2', True):
                 cmd += " -pbkdf2"
+                if self.settings.get('use_pbkdf2_iterations', True):
+                    iterations = self.settings.get('pbkdf2_iterations', 200000)
+                    cmd += f" -iter {iterations}"
         return cmd
         
     def validate_cipher(self):
