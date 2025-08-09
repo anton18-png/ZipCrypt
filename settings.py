@@ -8,6 +8,7 @@ import re
 import tempfile
 import shutil
 from master_password_manager import MasterPasswordManager
+from utils import get_openssl_ciphers
 
 class SettingsTab(ttk.Frame):
     def __init__(self, parent):
@@ -15,15 +16,16 @@ class SettingsTab(ttk.Frame):
         self.root = parent.winfo_toplevel()
         self.crypto_engine = None
         self.master_password_manager = None
+        self.ciphers = get_openssl_ciphers()  # Fetch available ciphers
         self.settings = {
             'file_methods': 'binary_openssl_7zip',
             'compression_method': 'none',
             '7zip_version': '24.08',
-            'zstd_version': '1.5.7',  # New setting for Zstandard version
+            'zstd_version': '1.5.7',
             'openssl_version': '3.5.1',
-            'aes_algorithm': 'aes-256-cbc',  # New setting for AES algorithm
-            'use_salt': True,  # New setting for salt
-            'use_pbkdf2': True,  # New setting for PBKDF2
+            'cipher_algorithm': 'aes-256-cbc',  # Changed from aes_algorithm to cipher_algorithm
+            'use_salt': True,
+            'use_pbkdf2': True,
             'theme': 'litera',
             'telegram_token': '',
             'telegram_chat_id': '',
@@ -104,11 +106,16 @@ class SettingsTab(ttk.Frame):
         for value, text in methods:
             ttk.Radiobutton(section_frame, text=text, variable=self.file_methods_var, value=value).pack(anchor='w', pady=2)
         
-        # AES Algorithm Selection
-        ttk.Label(section_frame, text="AES алгоритм:").pack(anchor='w', pady=2)
-        self.aes_algorithm_var = ttk.StringVar(value=self.settings['aes_algorithm'])
-        ttk.Combobox(section_frame, textvariable=self.aes_algorithm_var, 
-                     values=['aes-128-cbc', 'aes-192-cbc', 'aes-256-cbc']).pack(fill='x', pady=2)
+        # Cipher Algorithm Selection
+        # ttk.Label(section_frame, text="Алгоритм шифрования:").pack(anchor='w', pady=2)
+        # self.cipher_algorithm_var = ttk.StringVar(value=self.settings['cipher_algorithm'])
+        # ttk.Combobox(section_frame, textvariable=self.cipher_algorithm_var, 
+        #              values=self.ciphers).pack(fill='x', pady=2)
+
+        ttk.Label(section_frame, text="Алгоритм шифрования:").pack(anchor='w', pady=2)
+        self.cipher_algorithm_var = ttk.StringVar(value=self.settings['cipher_algorithm'])
+        ttk.Combobox(section_frame, textvariable=self.cipher_algorithm_var, 
+                     values=self.ciphers).pack(fill='x', pady=2)
         
         # Salt and PBKDF2 Checkboxes
         self.use_salt_var = ttk.BooleanVar(value=self.settings['use_salt'])
@@ -257,11 +264,11 @@ class SettingsTab(ttk.Frame):
                 'file_methods': self.file_methods_var.get(),
                 'compression_method': self.compression_method_var.get(),
                 '7zip_version': self.sevenzip_version_var.get(),
-                'zstd_version': self.zstd_version_var.get(),  # Save Zstandard version
+                'zstd_version': self.zstd_version_var.get(),
                 'openssl_version': self.openssl_version_var.get(),
-                'aes_algorithm': self.aes_algorithm_var.get(),  # Save AES algorithm
-                'use_salt': self.use_salt_var.get(),  # Save salt setting
-                'use_pbkdf2': self.use_pbkdf2_var.get(),  # Save PBKDF2 setting
+                'cipher_algorithm': self.cipher_algorithm_var.get(),
+                'use_salt': self.use_salt_var.get(),
+                'use_pbkdf2': self.use_pbkdf2_var.get(),
                 'theme': self.theme_var.get(),
                 'telegram_token': self.telegram_token_var.get(),
                 'telegram_chat_id': self.telegram_chat_id_var.get(),
@@ -313,11 +320,11 @@ class SettingsTab(ttk.Frame):
             'file_methods': 'binary_openssl_7zip',
             'compression_method': 'none',
             '7zip_version': '24.08',
-            'zstd_version': '1.5.7',  # Default Zstandard version
+            'zstd_version': '1.5.7',
             'openssl_version': '3.5.1',
-            'aes_algorithm': 'aes-256-cbc',  # Default AES algorithm
-            'use_salt': True,  # Default salt setting
-            'use_pbkdf2': True,  # Default PBKDF2 setting
+            'cipher_algorithm': 'aes-256-cbc',
+            'use_salt': True,
+            'use_pbkdf2': True,
             'theme': 'litera',
             'telegram_token': '',
             'telegram_chat_id': '',
@@ -332,7 +339,7 @@ class SettingsTab(ttk.Frame):
         self.sevenzip_version_var.set(self.settings['7zip_version'])
         self.zstd_version_var.set(self.settings['zstd_version'])
         self.openssl_version_var.set(self.settings['openssl_version'])
-        self.aes_algorithm_var.set(self.settings['aes_algorithm'])
+        self.cipher_algorithm_var.set(self.settings['cipher_algorithm'])
         self.use_salt_var.set(self.settings['use_salt'])
         self.use_pbkdf2_var.set(self.settings['use_pbkdf2'])
         self.theme_var.set(self.settings['theme'])
@@ -436,7 +443,7 @@ class SettingsTab(ttk.Frame):
             self.sevenzip_version_var.set(self.settings.get('7zip_version', '24.08'))
             self.zstd_version_var.set(self.settings.get('zstd_version', '1.5.7'))
             self.openssl_version_var.set(self.settings.get('openssl_version', '3.5.1'))
-            self.aes_algorithm_var.set(self.settings.get('aes_algorithm', 'aes-256-cbc'))
+            self.cipher_algorithm_var.set(self.settings.get('cipher_algorithm', 'aes-256-cbc'))
             self.use_salt_var.set(self.settings.get('use_salt', True))
             self.use_pbkdf2_var.set(self.settings.get('use_pbkdf2', True))
             self.theme_var.set(self.settings.get('theme', 'litera'))

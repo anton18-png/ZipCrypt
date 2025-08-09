@@ -11,17 +11,18 @@ class CryptoEngine:
             'file_methods': 'binary_openssl_7zip',
             'compression_method': 'normal',
             '7zip_version': '24.08',
-            'zstd_version': '1.5.7',  # New setting
+            'zstd_version': '1.5.7',
             'openssl_version': '3.5.1',
-            'aes_algorithm': 'aes-256-cbc',  # New setting
-            'use_salt': True,  # New setting
-            'use_pbkdf2': True,  # New setting
+            'cipher_algorithm': 'aes-256-cbc',
+            'use_salt': True,
+            'use_pbkdf2': True,
             'theme': 'Classic',
             'telegram_token': '',
             'master_password': '',
             'show_passwords': False,
             'delete_temp_files': True
         }
+        self.unsupported_ciphers = ['chacha20', 'chacha20-poly1305', 'gcm', 'ccm', 'ocb', 'siv', 'wrap', 'xts']
         
     def update_settings(self, settings):
         """Update engine settings"""
@@ -61,15 +62,32 @@ class CryptoEngine:
     def build_openssl_cmd(self, base_cmd, use_salt=True, use_pbkdf2=True):
         """Build OpenSSL command with conditional salt and PBKDF2 options"""
         cmd = base_cmd
-        if use_salt:
-            cmd += " -salt"
-        if use_pbkdf2:
-            cmd += " -pbkdf2"
+        cipher = self.settings.get('cipher_algorithm', 'aes-256-cbc')
+        # Disable salt and PBKDF2 for ciphers that don't support them
+        if any(unsupported in cipher for unsupported in self.unsupported_ciphers):
+            logging.warning(f"Cipher {cipher} may not support -salt or -pbkdf2. Skipping these options.")
+        else:
+            if use_salt:
+                cmd += " -salt"
+            if use_pbkdf2:
+                cmd += " -pbkdf2"
         return cmd
+        
+    def validate_cipher(self):
+        """Validate if the selected cipher is supported"""
+        cipher = self.settings.get('cipher_algorithm', 'aes-256-cbc')
+        if any(unsupported in cipher for unsupported in self.unsupported_ciphers):
+            logging.error(f"Unsupported cipher selected: {cipher}. Falling back to aes-256-cbc.")
+            self.settings['cipher_algorithm'] = 'aes-256-cbc'
+            return False
+        return True
         
     def encrypt_files(self, file_paths, password, output_path, progress_callback=None):
         """Encrypt files using the specified method"""
         try:
+            if not self.validate_cipher():
+                raise ValueError(f"Unsupported cipher: {self.settings['cipher_algorithm']}")
+                
             method = self.settings['file_methods']
             
             if method == 'binary_openssl_7zip':
@@ -88,6 +106,9 @@ class CryptoEngine:
     def decrypt_files(self, encrypted_file, password, output_dir, progress_callback=None):
         """Decrypt files using the specified method"""
         try:
+            if not self.validate_cipher():
+                raise ValueError(f"Unsupported cipher: {self.settings['cipher_algorithm']}")
+                
             method = self.settings['file_methods']
             
             if method == 'binary_openssl_7zip':
@@ -125,7 +146,7 @@ class CryptoEngine:
                 if os.path.isfile(file_path):
                     original_name = os.path.basename(file_path)
                     encrypted_file = os.path.join(encrypted_files_dir, original_name + '.enc')
-                    file_openssl_cmd = f'"{openssl_path}" {self.settings["aes_algorithm"]} -a'
+                    file_openssl_cmd = f'"{openssl_path}" {self.settings["cipher_algorithm"]} -a'
                     file_openssl_cmd = self.build_openssl_cmd(file_openssl_cmd, self.settings['use_salt'], self.settings['use_pbkdf2'])
                     file_openssl_cmd += f' -in "{file_path}" -out "{encrypted_file}" -pass pass:{binary_base64}'
                     
@@ -145,7 +166,7 @@ class CryptoEngine:
                     self.run_command(tar_cmd)
                     
                     encrypted_archive = os.path.join(encrypted_files_dir, f"{original_name}.tar.gz.enc")
-                    archive_openssl_cmd = f'"{openssl_path}" {self.settings["aes_algorithm"]} -a'
+                    archive_openssl_cmd = f'"{openssl_path}" {self.settings["cipher_algorithm"]} -a'
                     archive_openssl_cmd = self.build_openssl_cmd(archive_openssl_cmd, self.settings['use_salt'], self.settings['use_pbkdf2'])
                     archive_openssl_cmd += f' -in "{archive_path}" -out "{encrypted_archive}" -pass pass:{binary_base64}'
                     
@@ -243,7 +264,7 @@ class CryptoEngine:
             for file_path in encrypted_files_found:
                 encrypted_file = os.path.join(extracted_dir, file_path)
                 decrypted_file = os.path.join(output_dir, file_path[:-4])
-                decrypt_cmd = f'"{openssl_path}" {self.settings["aes_algorithm"]} -a -d'
+                decrypt_cmd = f'"{openssl_path}" {self.settings["cipher_algorithm"]} -a -d'
                 decrypt_cmd = self.build_openssl_cmd(decrypt_cmd, self.settings['use_salt'], self.settings['use_pbkdf2'])
                 decrypt_cmd += f' -in "{encrypted_file}" -out "{decrypted_file}" -pass pass:{binary_base64}'
                 
@@ -271,7 +292,7 @@ class CryptoEngine:
                 raise FileNotFoundError("OpenSSL executable not found")
                 
             if len(file_paths) == 1 and os.path.isfile(file_paths[0]):
-                openssl_cmd = f'"{openssl_path}" {self.settings["aes_algorithm"]} -a'
+                openssl_cmd = f'"{openssl_path}" {self.settings["cipher_algorithm"]} -a'
                 openssl_cmd = self.build_openssl_cmd(openssl_cmd, self.settings['use_salt'], self.settings['use_pbkdf2'])
                 openssl_cmd += f' -in "{file_paths[0]}" -out "{output_path}" -pass pass:{password}'
                 result = self.run_command(openssl_cmd)
@@ -283,7 +304,7 @@ class CryptoEngine:
                 tar_cmd = f'tar -czf "{archive_path}" {" ".join(file_paths)}'
                 self.run_command(tar_cmd)
                 
-                openssl_cmd = f'"{openssl_path}" {self.settings["aes_algorithm"]} -a'
+                openssl_cmd = f'"{openssl_path}" {self.settings["cipher_algorithm"]} -a'
                 openssl_cmd = self.build_openssl_cmd(openssl_cmd, self.settings['use_salt'], self.settings['use_pbkdf2'])
                 openssl_cmd += f' -in "{archive_path}" -out "{output_path}" -pass pass:{password}'
                 result = self.run_command(openssl_cmd)
@@ -304,7 +325,7 @@ class CryptoEngine:
         os.makedirs(output_dir, exist_ok=True)
         
         output_file = os.path.join(output_dir, 'decrypted_file')
-        openssl_cmd = f'"{openssl_path}" {self.settings["aes_algorithm"]} -a -d'
+        openssl_cmd = f'"{openssl_path}" {self.settings["cipher_algorithm"]} -a -d'
         openssl_cmd = self.build_openssl_cmd(openssl_cmd, self.settings['use_salt'], self.settings['use_pbkdf2'])
         openssl_cmd += f' -in "{encrypted_file}" -out "{output_file}" -pass pass:{password}'
         result = self.run_command(openssl_cmd)
@@ -334,7 +355,7 @@ class CryptoEngine:
             self.run_command(tar_cmd)
             
             encrypted_archive = os.path.join(temp_dir, 'archive.enc')
-            openssl_cmd = f'"{openssl_path}" {self.settings["aes_algorithm"]} -a'
+            openssl_cmd = f'"{openssl_path}" {self.settings["cipher_algorithm"]} -a'
             openssl_cmd = self.build_openssl_cmd(openssl_cmd, self.settings['use_salt'], self.settings['use_pbkdf2'])
             openssl_cmd += f' -in "{archive_path}" -out "{encrypted_archive}" -pass pass:{password}'
             result = self.run_command(openssl_cmd)
@@ -401,7 +422,7 @@ class CryptoEngine:
                 raise FileNotFoundError("OpenSSL executable not found")
                 
             decrypted_archive = os.path.join(temp_dir, 'decrypted.tar.gz')
-            openssl_cmd = f'"{openssl_path}" {self.settings["aes_algorithm"]} -a -d'
+            openssl_cmd = f'"{openssl_path}" {self.settings["cipher_algorithm"]} -a -d'
             openssl_cmd = self.build_openssl_cmd(openssl_cmd, self.settings['use_salt'], self.settings['use_pbkdf2'])
             openssl_cmd += f' -in "{encrypted_file_path}" -out "{decrypted_archive}" -pass pass:{password}'
             result = self.run_command(openssl_cmd)

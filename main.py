@@ -28,11 +28,11 @@ class ZipCryptApp:
             'file_methods': 'binary_openssl_7zip',
             'compression_method': 'none',
             '7zip_version': '24.08',
-            'zstd_version': '1.5.7',  # New setting
+            'zstd_version': '1.5.7',
             'openssl_version': '3.5.1',
-            'aes_algorithm': 'aes-256-cbc',  # New setting
-            'use_salt': True,  # New setting
-            'use_pbkdf2': True,  # New setting
+            'cipher_algorithm': 'aes-256-cbc',
+            'use_salt': True,
+            'use_pbkdf2': True,
             'theme': 'boosterxvapor',
             'telegram_token': '',
             'telegram_chat_id': '',
@@ -131,11 +131,11 @@ class ZipCryptApp:
                 'file_methods': self.settings_tab.file_methods_var.get(),
                 'compression_method': self.settings_tab.compression_method_var.get(),
                 '7zip_version': self.settings_tab.sevenzip_version_var.get(),
-                'zstd_version': self.settings_tab.zstd_version_var.get(),  # Save Zstandard version
+                'zstd_version': self.settings_tab.zstd_version_var.get(),
                 'openssl_version': self.settings_tab.openssl_version_var.get(),
-                'aes_algorithm': self.settings_tab.aes_algorithm_var.get(),  # Save AES algorithm
-                'use_salt': self.settings_tab.use_salt_var.get(),  # Save salt setting
-                'use_pbkdf2': self.settings_tab.use_pbkdf2_var.get(),  # Save PBKDF2 setting
+                'cipher_algorithm': self.settings_tab.cipher_algorithm_var.get(),
+                'use_salt': self.settings_tab.use_salt_var.get(),
+                'use_pbkdf2': self.settings_tab.use_pbkdf2_var.get(),
                 'theme': self.settings_tab.theme_var.get(),
                 'telegram_token': self.settings_tab.telegram_token_var.get(),
                 'telegram_chat_id': self.settings_tab.telegram_chat_id_var.get(),
@@ -231,7 +231,7 @@ class ZipCryptApp:
             if not openssl_path:
                 raise FileNotFoundError("OpenSSL executable not found")
                 
-            encrypt_cmd = f'"{openssl_path}" {self.settings["aes_algorithm"]} -a'
+            encrypt_cmd = f'"{openssl_path}" {self.settings["cipher_algorithm"]} -a'
             encrypt_cmd = self.crypto_engine.build_openssl_cmd(encrypt_cmd, self.settings['use_salt'], self.settings['use_pbkdf2'])
             encrypt_cmd += f' -in "{temp_file}" -out "master_password.enc" -pass pass:{password}'
             result = self.crypto_engine.run_command(encrypt_cmd)
@@ -255,7 +255,7 @@ class ZipCryptApp:
                 raise FileNotFoundError("OpenSSL executable not found")
                 
             temp_output = os.path.join(temp_dir, 'master_password_dec.txt')
-            decrypt_cmd = f'"{openssl_path}" {self.settings["aes_algorithm"]} -a -d'
+            decrypt_cmd = f'"{openssl_path}" {self.settings["cipher_algorithm"]} -a -d'
             decrypt_cmd = self.crypto_engine.build_openssl_cmd(decrypt_cmd, self.settings['use_salt'], self.settings['use_pbkdf2'])
             decrypt_cmd += f' -in "master_password.enc" -out "{temp_output}" -pass pass:{password}'
             result = self.crypto_engine.run_command(decrypt_cmd)

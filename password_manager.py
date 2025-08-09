@@ -133,7 +133,7 @@ class PasswordManagerTab(tk.Frame):
         """Open password database"""
         path = filedialog.askopenfilename(
             title="Открыть базу паролей", 
-            filetypes=[("DLL files", "*.dll"), ("All files", "*.*")]
+            filetypes=[("DLL files", "*.dll"), ("Zstandard files", "*.zst"), ("All files", "*.*")]
         )
         if not path:
             return
@@ -162,18 +162,31 @@ class PasswordManagerTab(tk.Frame):
         try:
             temp_dir = create_temp_directory()
             
-            # Extract from 7zip
-            sevenzip_path = self.crypto_engine.find_7zip_executable()
-            if not sevenzip_path:
-                raise FileNotFoundError("7zip executable not found")
+            # Validate cipher
+            if not self.crypto_engine.validate_cipher():
+                raise ValueError(f"Unsupported cipher: {self.crypto_engine.settings['cipher_algorithm']}")
                 
+            # Extract based on compression type
+            compression_type = self.crypto_engine.settings.get('compression_type', '7zip')
             extracted_dir = os.path.join(temp_dir, 'extracted')
             os.makedirs(extracted_dir)
             
-            sevenzip_cmd = f'"{sevenzip_path}" x "{path}" -o"{extracted_dir}" -p{password}'
-            result = self.crypto_engine.run_command(sevenzip_cmd)
-            if result and result.returncode != 0:
-                raise Exception(f"7zip extraction failed: {result.stderr}")
+            if compression_type == 'zstd':
+                zstd_path = self.crypto_engine.find_zstd_executable()
+                if not zstd_path:
+                    raise FileNotFoundError("Zstandard executable not found")
+                zstd_cmd = f'"{zstd_path}" -d "{path}" -o "{extracted_dir}"'
+                result = self.crypto_engine.run_command(zstd_cmd)
+                if result and result.returncode != 0:
+                    raise Exception(f"Zstandard extraction failed: {result.stderr}")
+            else:  # 7zip
+                sevenzip_path = self.crypto_engine.find_7zip_executable()
+                if not sevenzip_path:
+                    raise FileNotFoundError("7zip executable not found")
+                sevenzip_cmd = f'"{sevenzip_path}" x "{path}" -o"{extracted_dir}" -p{password}'
+                result = self.crypto_engine.run_command(sevenzip_cmd)
+                if result and result.returncode != 0:
+                    raise Exception(f"7zip extraction failed: {result.stderr}")
                 
             # Find the database file
             files = [os.path.join(extracted_dir, f) for f in os.listdir(extracted_dir) if os.path.isfile(os.path.join(extracted_dir, f))]
@@ -188,7 +201,9 @@ class PasswordManagerTab(tk.Frame):
                 raise FileNotFoundError("OpenSSL executable not found")
                 
             temp_openssl = os.path.join(temp_dir, 'db.dec')
-            decrypt_cmd = f'"{openssl_path}" aes-256-cbc -a -salt -pbkdf2 -d -in "{work_path}" -out "{temp_openssl}" -pass pass:{password}'
+            decrypt_cmd = f'"{openssl_path}" {self.crypto_engine.settings["cipher_algorithm"]} -a -d'
+            decrypt_cmd = self.crypto_engine.build_openssl_cmd(decrypt_cmd, self.crypto_engine.settings['use_salt'], self.crypto_engine.settings['use_pbkdf2'])
+            decrypt_cmd += f' -in "{work_path}" -out "{temp_openssl}" -pass pass:{password}'
             
             result = self.crypto_engine.run_command(decrypt_cmd)
             if result and result.returncode != 0:
@@ -207,15 +222,15 @@ class PasswordManagerTab(tk.Frame):
             self.set_status(f"Ошибка при открытии: {e}", False)
             logging.error(f"Ошибка при открытии базы: {e}")
         finally:
-            if temp_dir:
+            if temp_dir and self.crypto_engine.settings.get('delete_temp_files', True):
                 shutil.rmtree(temp_dir, ignore_errors=True)
 
     def create_db(self):
         """Create new password database"""
         path = filedialog.asksaveasfilename(
             title="Создать новую базу паролей", 
-            defaultextension=".dll", 
-            filetypes=[("DLL files", "*.dll"), ("All files", "*.*")]
+            defaultextension=".dll" if self.crypto_engine.settings.get('compression_type', '7zip') == '7zip' else ".zst", 
+            filetypes=[("DLL files", "*.dll"), ("Zstandard files", "*.zst"), ("All files", "*.*")]
         )
         if not path:
             return
@@ -247,6 +262,10 @@ class PasswordManagerTab(tk.Frame):
             password = self.get_password()
             data = json.dumps(self.passwords, ensure_ascii=False).encode('utf-8')
             
+            # Validate cipher
+            if not self.crypto_engine.validate_cipher():
+                raise ValueError(f"Unsupported cipher: {self.crypto_engine.settings['cipher_algorithm']}")
+            
             # Create temporary file with data
             work_path = os.path.join(temp_dir, 'db.txt')
             with open(work_path, 'wb') as f:
@@ -258,37 +277,51 @@ class PasswordManagerTab(tk.Frame):
                 raise FileNotFoundError("OpenSSL executable not found")
                 
             temp_openssl = os.path.join(temp_dir, 'db.openssl')
-            encrypt_cmd = f'"{openssl_path}" aes-256-cbc -a -salt -pbkdf2 -in "{work_path}" -out "{temp_openssl}" -pass pass:{password}'
+            encrypt_cmd = f'"{openssl_path}" {self.crypto_engine.settings["cipher_algorithm"]} -a'
+            encrypt_cmd = self.crypto_engine.build_openssl_cmd(encrypt_cmd, self.crypto_engine.settings['use_salt'], self.crypto_engine.settings['use_pbkdf2'])
+            encrypt_cmd += f' -in "{work_path}" -out "{temp_openssl}" -pass pass:{password}'
             
             result = self.crypto_engine.run_command(encrypt_cmd)
             if result and result.returncode != 0:
                 raise Exception(f"OpenSSL encryption failed: {result.stderr}")
                 
-            # Compress with 7zip
-            sevenzip_path = self.crypto_engine.find_7zip_executable()
-            if not sevenzip_path:
-                raise FileNotFoundError("7zip executable not found")
-                
+            # Compress based on compression type
+            compression_type = self.crypto_engine.settings.get('compression_type', '7zip')
             compression_level = {
-                'normal': '5',
+                'none': '1' if compression_type == 'zstd' else '0',
                 'fast': '1',
-                'ultra': '9'
-            }.get(self.crypto_engine.settings.get('compression_method', 'normal'), '5')
+                'medium': '5' if compression_type == 'zstd' else '3',
+                'normal': '10' if compression_type == 'zstd' else '5',
+                'high': '15' if compression_type == 'zstd' else '7',
+                'ultra': '19' if compression_type == 'zstd' else '9'
+            }.get(self.crypto_engine.settings.get('compression_method', 'normal'), '10' if compression_type == 'zstd' else '5')
             
-            sevenzip_cmd = f'"{sevenzip_path}" a -t7z -m0=lzma2 -mx={compression_level} -p{password} "{self.db_path.get()}" "{temp_openssl}"'
-            
-            result = self.crypto_engine.run_command(sevenzip_cmd)
-            if result and result.returncode != 0:
-                raise Exception(f"7zip compression failed: {result.stderr}")
+            output_path = self.db_path.get()
+            if compression_type == 'zstd':
+                zstd_path = self.crypto_engine.find_zstd_executable()
+                if not zstd_path:
+                    raise FileNotFoundError("Zstandard executable not found")
+                zstd_cmd = f'"{zstd_path}" -{compression_level} "{temp_openssl}" -o "{output_path}"'
+                result = self.crypto_engine.run_command(zstd_cmd)
+                if result and result.returncode != 0:
+                    raise Exception(f"Zstandard compression failed: {result.stderr}")
+            else:  # 7zip
+                sevenzip_path = self.crypto_engine.find_7zip_executable()
+                if not sevenzip_path:
+                    raise FileNotFoundError("7zip executable not found")
+                sevenzip_cmd = f'"{sevenzip_path}" a -t7z -m0=lzma2 -mx={compression_level} -p{password} "{output_path}" "{temp_openssl}"'
+                result = self.crypto_engine.run_command(sevenzip_cmd)
+                if result and result.returncode != 0:
+                    raise Exception(f"7zip compression failed: {result.stderr}")
                 
-            self.set_status(f"База сохранена: {self.db_path.get()}", True)
-            logging.info(f"База паролей зашифрована и сохранена: {self.db_path.get()}")
+            self.set_status(f"База сохранена: {output_path}", True)
+            logging.info(f"База паролей зашифрована и сохранена: {output_path}")
             
         except Exception as e:
             self.set_status(f"Ошибка при сохранении: {e}", False)
             logging.error(f"Ошибка при сохранении базы: {e}")
         finally:
-            if temp_dir:
+            if temp_dir and self.crypto_engine.settings.get('delete_temp_files', True):
                 shutil.rmtree(temp_dir, ignore_errors=True)
 
     def add_entry(self):
@@ -429,4 +462,4 @@ class PasswordManagerTab(tk.Frame):
             self.refresh_tree()
             self.set_status(f"Импортировано из {path}", True)
         except Exception as e:
-            self.set_status(f"Ошибка импорта: {e}", False) 
+            self.set_status(f"Ошибка импорта: {e}", False)

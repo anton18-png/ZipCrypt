@@ -84,6 +84,34 @@ def find_openssl_executable(version=None):
             return path
     return None
 
+def get_openssl_ciphers():
+    """Fetch the list of supported ciphers from OpenSSL, excluding AEAD ciphers"""
+    try:
+        openssl_path = find_openssl_executable()
+        if not openssl_path:
+            logging.error("OpenSSL executable not found")
+            return ['aes-256-cbc']  # Fallback to default
+        cmd = f'"{openssl_path}" list -cipher-algorithms'
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, encoding='utf-8')
+        if result.returncode != 0:
+            logging.error(f"Failed to fetch ciphers: {result.stderr}")
+            return ['aes-256-cbc']
+        
+        # Parse ciphers from output, excluding AEAD ciphers
+        ciphers = []
+        unsupported_modes = ['gcm', 'ccm', 'ocb', 'siv', 'chacha20', 'wrap', 'xts']
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if line and '=>' not in line:  # Ignore aliases
+                cipher = line.split()[0].lower().replace('_', '-')
+                # Exclude AEAD ciphers and other unsupported modes
+                if not any(mode in cipher for mode in unsupported_modes):
+                    ciphers.append(cipher)
+        return sorted(ciphers)
+    except Exception as e:
+        logging.error(f"Error fetching OpenSSL ciphers: {e}")
+        return ['aes-256-cbc']  # Fallback to default
+
 def run_command(command, capture_output=True, timeout=30):
     """Run a command and return the result"""
     try:
@@ -117,7 +145,7 @@ def load_settings():
     """Load settings from settings.json"""
     default_settings = {
         'delete_temp_files': True,
-        'aes_algorithm': 'aes-256-cbc',
+        'cipher_algorithm': 'aes-256-cbc',
         'use_salt': True,
         'use_pbkdf2': True
     }
