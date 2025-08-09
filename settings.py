@@ -19,14 +19,19 @@ class SettingsTab(ttk.Frame):
             'file_methods': 'binary_openssl_7zip',
             'compression_method': 'none',
             '7zip_version': '24.08',
+            'zstd_version': '1.5.7',  # New setting for Zstandard version
             'openssl_version': '3.5.1',
+            'aes_algorithm': 'aes-256-cbc',  # New setting for AES algorithm
+            'use_salt': True,  # New setting for salt
+            'use_pbkdf2': True,  # New setting for PBKDF2
             'theme': 'litera',
             'telegram_token': '',
             'telegram_chat_id': '',
             'show_passwords': False,
             'logging_enabled': False,
             'disable_encryption_test': False,
-            'send_password_in_caption': False
+            'send_password_in_caption': False,
+            'delete_temp_files': True
         }
         self.setup_ui()
         self.apply_theme()
@@ -98,6 +103,20 @@ class SettingsTab(ttk.Frame):
         ]
         for value, text in methods:
             ttk.Radiobutton(section_frame, text=text, variable=self.file_methods_var, value=value).pack(anchor='w', pady=2)
+        
+        # AES Algorithm Selection
+        ttk.Label(section_frame, text="AES алгоритм:").pack(anchor='w', pady=2)
+        self.aes_algorithm_var = ttk.StringVar(value=self.settings['aes_algorithm'])
+        ttk.Combobox(section_frame, textvariable=self.aes_algorithm_var, 
+                     values=['aes-128-cbc', 'aes-192-cbc', 'aes-256-cbc']).pack(fill='x', pady=2)
+        
+        # Salt and PBKDF2 Checkboxes
+        self.use_salt_var = ttk.BooleanVar(value=self.settings['use_salt'])
+        ttk.Checkbutton(section_frame, text="Использовать соль", 
+                       variable=self.use_salt_var).pack(anchor='w', pady=2)
+        self.use_pbkdf2_var = ttk.BooleanVar(value=self.settings['use_pbkdf2'])
+        ttk.Checkbutton(section_frame, text="Использовать PBKDF2", 
+                       variable=self.use_pbkdf2_var).pack(anchor='w', pady=2)
 
     def create_compression_section(self, parent):
         """Create compression settings section"""
@@ -125,12 +144,17 @@ class SettingsTab(ttk.Frame):
         ttk.Label(section_frame, text="7zip версия:").pack(anchor='w')
         self.sevenzip_version_var = ttk.StringVar(value=self.settings['7zip_version'])
         ttk.Combobox(section_frame, textvariable=self.sevenzip_version_var, 
-                    values=['24.08', '920', '2501_extra']).pack(fill='x', pady=2)
+                     values=['24.08', '920', '2501_extra', '24.09_zstandard']).pack(fill='x', pady=2)
+        
+        ttk.Label(section_frame, text="Zstandard версия:").pack(anchor='w')
+        self.zstd_version_var = ttk.StringVar(value=self.settings['zstd_version'])
+        ttk.Combobox(section_frame, textvariable=self.zstd_version_var, 
+                     values=['1.5.7']).pack(fill='x', pady=2)
         
         ttk.Label(section_frame, text="OpenSSL версия:").pack(anchor='w')
         self.openssl_version_var = ttk.StringVar(value=self.settings['openssl_version'])
         ttk.Combobox(section_frame, textvariable=self.openssl_version_var, 
-                    values=['3.5.1', '3.5.1_Light', '3.2.4']).pack(fill='x', pady=2)
+                     values=['3.5.1', '3.5.1_Light', '3.2.4']).pack(fill='x', pady=2)
 
     def create_theme_section(self, parent):
         """Create theme selection section"""
@@ -174,6 +198,9 @@ class SettingsTab(ttk.Frame):
         self.disable_encryption_test_var = ttk.BooleanVar(value=self.settings['disable_encryption_test'])
         ttk.Checkbutton(section_frame, text="Отключить тест шифрования при запуске", 
                        variable=self.disable_encryption_test_var).pack(anchor='w')
+        self.delete_temp_files_var = ttk.BooleanVar(value=self.settings['delete_temp_files'])
+        ttk.Checkbutton(section_frame, text="Удалять временные файлы", 
+                       variable=self.delete_temp_files_var).pack(anchor='w')
 
     def create_advanced_section(self, parent):
         """Create advanced settings section"""
@@ -195,7 +222,7 @@ class SettingsTab(ttk.Frame):
         """Apply selected theme"""
         try:
             theme = self.settings['theme']
-            self.root.style.theme_use(theme)  # Use theme_use instead of direct assignment
+            self.root.style.theme_use(theme)
             logging.info(f"Applied theme: {theme}")
         except Exception as e:
             logging.error(f"Error applying theme: {e}")
@@ -215,13 +242,11 @@ class SettingsTab(ttk.Frame):
             settings_dir = os.path.dirname(settings_file) or '.'
             logging.debug(f"Checking write permissions for {settings_dir}")
             
-            # Check write permissions
             if not os.access(settings_dir, os.W_OK):
                 logging.error(f"No write permission for directory: {settings_dir}")
                 messagebox.showerror("Ошибка", f"Нет прав на запись в директорию: {settings_dir}")
                 return False
 
-            # Validate Telegram token
             token = self.telegram_token_var.get()
             if token and not re.match(r'^\d+:[A-Za-z0-9_-]+$', token):
                 messagebox.showerror("Ошибка", "Неверный формат токена Telegram. Пример: 123456:ABC-DEF...")
@@ -232,22 +257,25 @@ class SettingsTab(ttk.Frame):
                 'file_methods': self.file_methods_var.get(),
                 'compression_method': self.compression_method_var.get(),
                 '7zip_version': self.sevenzip_version_var.get(),
+                'zstd_version': self.zstd_version_var.get(),  # Save Zstandard version
                 'openssl_version': self.openssl_version_var.get(),
+                'aes_algorithm': self.aes_algorithm_var.get(),  # Save AES algorithm
+                'use_salt': self.use_salt_var.get(),  # Save salt setting
+                'use_pbkdf2': self.use_pbkdf2_var.get(),  # Save PBKDF2 setting
                 'theme': self.theme_var.get(),
                 'telegram_token': self.telegram_token_var.get(),
                 'telegram_chat_id': self.telegram_chat_id_var.get(),
                 'logging_enabled': self.logging_enabled_var.get(),
                 'disable_encryption_test': self.disable_encryption_test_var.get(),
-                'send_password_in_caption': self.send_password_in_caption_var.get()
+                'send_password_in_caption': self.send_password_in_caption_var.get(),
+                'delete_temp_files': self.delete_temp_files_var.get()
             }
             
-            # Try writing directly
             try:
                 with open(settings_file, 'w', encoding='utf-8') as f:
                     json.dump(new_settings, f, indent=4, ensure_ascii=False)
                     logging.info(f"Settings saved to {settings_file}")
             except PermissionError:
-                # Fallback to temporary file
                 temp_fd, temp_path = tempfile.mkstemp(suffix='.json', prefix='settings_')
                 try:
                     with os.fdopen(temp_fd, 'w', encoding='utf-8') as temp_f:
@@ -285,25 +313,35 @@ class SettingsTab(ttk.Frame):
             'file_methods': 'binary_openssl_7zip',
             'compression_method': 'none',
             '7zip_version': '24.08',
+            'zstd_version': '1.5.7',  # Default Zstandard version
             'openssl_version': '3.5.1',
+            'aes_algorithm': 'aes-256-cbc',  # Default AES algorithm
+            'use_salt': True,  # Default salt setting
+            'use_pbkdf2': True,  # Default PBKDF2 setting
             'theme': 'litera',
             'telegram_token': '',
             'telegram_chat_id': '',
             'show_passwords': False,
             'logging_enabled': False,
             'disable_encryption_test': False,
-            'send_password_in_caption': False
+            'send_password_in_caption': False,
+            'delete_temp_files': True
         }
         self.file_methods_var.set(self.settings['file_methods'])
         self.compression_method_var.set(self.settings['compression_method'])
         self.sevenzip_version_var.set(self.settings['7zip_version'])
+        self.zstd_version_var.set(self.settings['zstd_version'])
         self.openssl_version_var.set(self.settings['openssl_version'])
+        self.aes_algorithm_var.set(self.settings['aes_algorithm'])
+        self.use_salt_var.set(self.settings['use_salt'])
+        self.use_pbkdf2_var.set(self.settings['use_pbkdf2'])
         self.theme_var.set(self.settings['theme'])
         self.telegram_token_var.set(self.settings['telegram_token'])
         self.telegram_chat_id_var.set(self.settings['telegram_chat_id'])
         self.logging_enabled_var.set(self.settings['logging_enabled'])
         self.disable_encryption_test_var.set(self.settings['disable_encryption_test'])
         self.send_password_in_caption_var.set(self.settings['send_password_in_caption'])
+        self.delete_temp_files_var.set(self.settings['delete_temp_files'])
         if self.crypto_engine:
             self.crypto_engine.update_settings(self.settings)
         if self.master_password_manager:
@@ -329,6 +367,17 @@ class SettingsTab(ttk.Frame):
                     else:
                         results.append(f"✗ 7zip {version}: не найден")
             
+            if not os.path.exists('zstd'):
+                results.append("✗ Папка 'zstd' не найдена")
+            else:
+                zstd_versions = self.get_available_zstd_versions()
+                for version in zstd_versions:
+                    path = os.path.join('zstd', f'zstd_{version}', 'zstd.exe')
+                    if os.path.exists(path):
+                        results.append(f"✓ Zstandard {version}: {path}")
+                    else:
+                        results.append(f"✗ Zstandard {version}: не найден")
+            
             if not os.path.exists('OpenSSL'):
                 results.append("✗ Папка 'OpenSSL' не найдена")
             else:
@@ -349,7 +398,11 @@ class SettingsTab(ttk.Frame):
 
     def get_available_7zip_versions(self):
         """Get available 7zip versions"""
-        return ['24.08', '920', '2501_extra']
+        return ['24.08', '920', '2501_extra', '24.09_zstandard']
+
+    def get_available_zstd_versions(self):
+        """Get available Zstandard versions"""
+        return ['1.5.7']
 
     def get_available_openssl_versions(self):
         """Get available OpenSSL versions"""
@@ -381,13 +434,18 @@ class SettingsTab(ttk.Frame):
             self.file_methods_var.set(self.settings.get('file_methods', 'binary_openssl_7zip'))
             self.compression_method_var.set(self.settings.get('compression_method', 'none'))
             self.sevenzip_version_var.set(self.settings.get('7zip_version', '24.08'))
+            self.zstd_version_var.set(self.settings.get('zstd_version', '1.5.7'))
             self.openssl_version_var.set(self.settings.get('openssl_version', '3.5.1'))
+            self.aes_algorithm_var.set(self.settings.get('aes_algorithm', 'aes-256-cbc'))
+            self.use_salt_var.set(self.settings.get('use_salt', True))
+            self.use_pbkdf2_var.set(self.settings.get('use_pbkdf2', True))
             self.theme_var.set(self.settings.get('theme', 'litera'))
             self.telegram_token_var.set(self.settings.get('telegram_token', ''))
             self.telegram_chat_id_var.set(self.settings.get('telegram_chat_id', ''))
             self.logging_enabled_var.set(self.settings.get('logging_enabled', False))
             self.disable_encryption_test_var.set(self.settings.get('disable_encryption_test', False))
             self.send_password_in_caption_var.set(self.settings.get('send_password_in_caption', False))
+            self.delete_temp_files_var.set(self.settings.get('delete_temp_files', True))
             self.apply_theme()
             self.configure_logging()
 

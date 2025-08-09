@@ -12,7 +12,6 @@ import threading
 import argparse
 from tkinter import simpledialog, messagebox
 
-# Import custom modules
 from settings import SettingsTab
 from files_tab import FilesTab
 from password_manager import PasswordManagerTab
@@ -25,77 +24,65 @@ class ZipCryptApp:
         self.root.title("ZipCrypt - Крипто архиватор и менеджер паролей")
         self.root.geometry("1000x600")
         
-        # Инициализация настроек по умолчанию
         self.default_settings = {
             'file_methods': 'binary_openssl_7zip',
             'compression_method': 'none',
             '7zip_version': '24.08',
+            'zstd_version': '1.5.7',  # New setting
             'openssl_version': '3.5.1',
+            'aes_algorithm': 'aes-256-cbc',  # New setting
+            'use_salt': True,  # New setting
+            'use_pbkdf2': True,  # New setting
             'theme': 'boosterxvapor',
             'telegram_token': '',
             'telegram_chat_id': '',
             'logging_enabled': False,
-            'disable_encryption_test': True
+            'disable_encryption_test': True,
+            'delete_temp_files': True
         }
         self.settings = self.default_settings.copy()
         
-        # Загрузка настроек
         self.load_settings()
         
-        # Настройка логирования
         self.configure_logging()
         
-        # Инициализация crypto engine
         self.crypto_engine = CryptoEngine()
         self.crypto_engine.update_settings(self.settings)
         
-        # Clean up old temporary directories
         cleanup_all_temp_directories()
         
-        # Test encryption functionality on startup if not disabled
         if not self.settings.get('disable_encryption_test', False):
             if not test_encryption_functionality():
                 messagebox.showwarning("Предупреждение", 
                     "Тест шифрования не прошел. Приложение может работать некорректно.")
                 logging.error("Startup encryption test failed")
         
-        # Prompt for master password (optional)
         self.settings['master_password'] = self.prompt_and_verify_master_password()
         
-        # Create notebook for tabs
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(fill='both', expand=True, padx=5, pady=5)
         
-        # Create tabs
         self.files_tab = FilesTab(self.notebook, self.crypto_engine)
         self.password_tab = PasswordManagerTab(self.notebook, self.crypto_engine)
         self.settings_tab = SettingsTab(self.notebook)
         
-        # Add tabs to notebook
         self.notebook.add(self.files_tab, text="Файлы")
         self.notebook.add(self.password_tab, text="Пароли")
         self.notebook.add(self.settings_tab, text="Настройки")
         
-        # Обновляем настройки во всех компонентах
         self.update_all_components()
         
-        # Bind tab change event
         self.notebook.bind('<<NotebookTabChanged>>', self.on_tab_changed)
         
-        # Connect settings tab to crypto engine
         self.settings_tab.set_crypto_engine(self.crypto_engine)
         
-        # Set master password in tabs (optional)
         self.set_master_password()
         
-        # Handle password file decryption if specified
         if password_file:
             self.handle_password_file(password_file)
         
-        # Apply theme after tabs are created
         self.settings_tab.apply_theme()
         
-        # Обработчик закрытия окна
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def configure_logging(self):
@@ -144,12 +131,17 @@ class ZipCryptApp:
                 'file_methods': self.settings_tab.file_methods_var.get(),
                 'compression_method': self.settings_tab.compression_method_var.get(),
                 '7zip_version': self.settings_tab.sevenzip_version_var.get(),
+                'zstd_version': self.settings_tab.zstd_version_var.get(),  # Save Zstandard version
                 'openssl_version': self.settings_tab.openssl_version_var.get(),
+                'aes_algorithm': self.settings_tab.aes_algorithm_var.get(),  # Save AES algorithm
+                'use_salt': self.settings_tab.use_salt_var.get(),  # Save salt setting
+                'use_pbkdf2': self.settings_tab.use_pbkdf2_var.get(),  # Save PBKDF2 setting
                 'theme': self.settings_tab.theme_var.get(),
                 'telegram_token': self.settings_tab.telegram_token_var.get(),
                 'telegram_chat_id': self.settings_tab.telegram_chat_id_var.get(),
                 'logging_enabled': self.settings_tab.logging_enabled_var.get(),
-                'disable_encryption_test': self.settings_tab.disable_encryption_test_var.get()
+                'disable_encryption_test': self.settings_tab.disable_encryption_test_var.get(),
+                'delete_temp_files': self.settings_tab.delete_temp_files_var.get()
             }
             
             self.settings.update(current_settings)
@@ -190,10 +182,10 @@ class ZipCryptApp:
                     show='*', 
                     parent=self.root
                 )
-                if password is None:  # User canceled
+                if password is None:
                     logging.info("Master password prompt canceled")
                     return None
-                if not password:  # User chose to skip
+                if not password:
                     logging.info("Master password skipped")
                     return None
                 try:
@@ -213,10 +205,10 @@ class ZipCryptApp:
                 show='*', 
                 parent=self.root
             )
-            if password is None:  # User canceled
+            if password is None:
                 logging.info("Master password creation canceled")
                 return None
-            if not password:  # User chose to skip
+            if not password:
                 logging.info("Master password creation skipped")
                 return None
             try:
@@ -225,7 +217,7 @@ class ZipCryptApp:
                 return password
             except Exception as e:
                 messagebox.showerror("Ошибка", f"Не удалось сохранить мастер-пароль: {str(e)}")
-                return self.prompt_and_verify_master_password()  # Retry if saving fails
+                return self.prompt_and_verify_master_password()
         
     def save_master_password(self, password):
         """Сохранение мастер-пароля в зашифрованном виде"""
@@ -239,7 +231,9 @@ class ZipCryptApp:
             if not openssl_path:
                 raise FileNotFoundError("OpenSSL executable not found")
                 
-            encrypt_cmd = f'"{openssl_path}" aes-256-cbc -a -salt -pbkdf2 -in "{temp_file}" -out "master_password.enc" -pass pass:{password}'
+            encrypt_cmd = f'"{openssl_path}" {self.settings["aes_algorithm"]} -a'
+            encrypt_cmd = self.crypto_engine.build_openssl_cmd(encrypt_cmd, self.settings['use_salt'], self.settings['use_pbkdf2'])
+            encrypt_cmd += f' -in "{temp_file}" -out "master_password.enc" -pass pass:{password}'
             result = self.crypto_engine.run_command(encrypt_cmd)
             if result and result.returncode != 0:
                 raise Exception(f"Master password encryption failed: {result.stderr}")
@@ -249,7 +243,7 @@ class ZipCryptApp:
             logging.error(f"Error saving master password: {e}")
             raise
         finally:
-            if temp_dir and os.path.exists(temp_dir):
+            if self.settings.get('delete_temp_files', True):
                 shutil.rmtree(temp_dir, ignore_errors=True)
 
     def decrypt_master_password(self, password):
@@ -261,7 +255,9 @@ class ZipCryptApp:
                 raise FileNotFoundError("OpenSSL executable not found")
                 
             temp_output = os.path.join(temp_dir, 'master_password_dec.txt')
-            decrypt_cmd = f'"{openssl_path}" aes-256-cbc -a -salt -pbkdf2 -d -in "master_password.enc" -out "{temp_output}" -pass pass:{password}'
+            decrypt_cmd = f'"{openssl_path}" {self.settings["aes_algorithm"]} -a -d'
+            decrypt_cmd = self.crypto_engine.build_openssl_cmd(decrypt_cmd, self.settings['use_salt'], self.settings['use_pbkdf2'])
+            decrypt_cmd += f' -in "master_password.enc" -out "{temp_output}" -pass pass:{password}'
             result = self.crypto_engine.run_command(decrypt_cmd)
             if result and result.returncode != 0:
                 raise Exception(f"Master password decryption failed: {result.stderr}")
@@ -270,7 +266,7 @@ class ZipCryptApp:
                 decrypted_password = f.read().strip()
             return decrypted_password
         finally:
-            if temp_dir and os.path.exists(temp_dir):
+            if self.settings.get('delete_temp_files', True):
                 shutil.rmtree(temp_dir, ignore_errors=True)
         
     def set_master_password(self):
