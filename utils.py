@@ -73,7 +73,7 @@ def find_zstd_executable(version=None):
 def find_openssl_executable(version=None):
     """Find OpenSSL executable based on version"""
     if version is None:
-        versions = ['OpenSSL_3.5.1', 'OpenSSL_3.5.1_Light', 'OpenSSL_3.2.4']
+        versions = ['OpenSSL_3.5.1', 'OpenSSL_3.5.1_Light', 'OpenSSL_3.2.4', 'OpenSSL_4.1.0_LibreSSL']
         for ver in versions:
             path = os.path.join('OpenSSL', ver, 'openssl.exe')
             if os.path.exists(path):
@@ -85,32 +85,43 @@ def find_openssl_executable(version=None):
     return None
 
 def get_openssl_ciphers():
-    """Fetch the list of supported ciphers from OpenSSL, excluding AEAD ciphers"""
+    """Fetch the list of supported ciphers from OpenSSL"""
     try:
         openssl_path = find_openssl_executable()
         if not openssl_path:
             logging.error("OpenSSL executable not found")
-            return ['aes-256-cbc']  # Fallback to default
+            return ['aes-256-cbc']  # Fallback
+
         cmd = f'"{openssl_path}" list -cipher-algorithms'
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True, encoding='utf-8')
         if result.returncode != 0:
             logging.error(f"Failed to fetch ciphers: {result.stderr}")
             return ['aes-256-cbc']
         
-        # Parse ciphers from output, excluding AEAD ciphers
+        # Parse ciphers from output
         ciphers = []
-        unsupported_modes = ['gcm', 'ccm', 'ocb', 'siv', 'chacha20', 'wrap', 'xts']
+        # Убираем только действительно нежелательные режимы, но оставляем GCM
+        unsupported_modes = ['ccm', 'ocb', 'siv', 'chacha20', 'wrap', 'xts']
+        # Примечание: GCM — это AEAD, но он широко поддерживается и безопасен
         for line in result.stdout.splitlines():
             line = line.strip()
-            if line and '=>' not in line:  # Ignore aliases
+            if line and '=>' not in line:  # Исключаем алиасы
                 cipher = line.split()[0].lower().replace('_', '-')
-                # Exclude AEAD ciphers and other unsupported modes
                 if not any(mode in cipher for mode in unsupported_modes):
                     ciphers.append(cipher)
-        return sorted(ciphers)
+        
+        # Убедимся, что хотя бы базовые AES есть
+        if not ciphers:
+            ciphers = [
+                'aes-128-cbc', 'aes-192-cbc', 'aes-256-cbc',
+                'aes-128-ctr', 'aes-192-ctr', 'aes-256-ctr',
+                'aes-128-gcm', 'aes-192-gcm', 'aes-256-gcm'
+            ]
+        
+        return sorted(set(ciphers))
     except Exception as e:
         logging.error(f"Error fetching OpenSSL ciphers: {e}")
-        return ['aes-256-cbc']  # Fallback to default
+        return ['aes-256-cbc']
 
 def run_command(command, capture_output=True, timeout=30):
     """Run a command and return the result"""

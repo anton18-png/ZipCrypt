@@ -110,8 +110,43 @@ class SettingsTab(ttk.Frame):
         
         ttk.Label(section_frame, text="Алгоритм шифрования:").pack(anchor='w', pady=2)
         self.cipher_algorithm_var = ttk.StringVar(value=self.settings['cipher_algorithm'])
+
+        # # 🔒 Только те AES-алгоритмы, которые точно есть в текущей сборке OpenSSL
+        # available_aes_algorithms = [
+        #     'aes-128-cbc',
+        #     'aes-192-cbc',
+        #     'aes-256-cbc',
+        #     'aes-128-ecb',
+        #     'aes-192-ecb',
+        #     'aes-256-ecb'
+        # ]
+        # available_aes_algorithms = ['aes-256-cbc']  # один безопасный режим по умолчанию
+        available_aes_algorithms = [
+            'aes-128-cbc',
+            'aes-192-cbc',
+            'aes-256-cbc'
+        ]
+
+        # Фильтруем: оставляем только те, что есть и в self.ciphers (на случай, если пользователь подменил)
+        filtered_aes_algorithms = [algo for algo in available_aes_algorithms if algo in self.ciphers]
+
+        # Если ни один AES не найден — используем fallback
+        if not filtered_aes_algorithms:
+            filtered_aes_algorithms = ['aes-256-cbc']  # аварийный вариант
+
+        # Если текущий алгоритм из настроек не в списке — выбираем дефолтный
+        if self.settings['cipher_algorithm'] not in filtered_aes_algorithms:
+            default_algo = 'aes-256-cbc'
+            if default_algo in filtered_aes_algorithms:
+                self.cipher_algorithm_var.set(default_algo)
+            elif filtered_aes_algorithms:
+                self.cipher_algorithm_var.set(filtered_aes_algorithms[0])
+            else:
+                self.cipher_algorithm_var.set('')
+
+        # Создаём Combobox
         ttk.Combobox(section_frame, textvariable=self.cipher_algorithm_var, 
-                     values=self.ciphers).pack(fill='x', pady=2)
+                    values=filtered_aes_algorithms).pack(fill='x', pady=2)
         
         self.use_salt_var = ttk.BooleanVar(value=self.settings['use_salt'])
         ttk.Checkbutton(section_frame, text="Использовать соль", 
@@ -165,7 +200,7 @@ class SettingsTab(ttk.Frame):
         ttk.Label(section_frame, text="OpenSSL версия:").pack(anchor='w')
         self.openssl_version_var = ttk.StringVar(value=self.settings['openssl_version'])
         ttk.Combobox(section_frame, textvariable=self.openssl_version_var, 
-                     values=['3.5.1', '3.5.1_Light', '3.2.4']).pack(fill='x', pady=2)
+                     values=['3.5.1', '3.5.1_Light', '3.2.4', '4.1.0_LibreSSL']).pack(fill='x', pady=2)
 
     def create_theme_section(self, parent):
         """Create theme selection section"""

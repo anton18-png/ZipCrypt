@@ -66,8 +66,8 @@ class CryptoEngine:
         cmd = base_cmd
         cipher = self.settings.get('cipher_algorithm', 'aes-256-cbc')
         # Disable salt and PBKDF2 for ciphers that don't support them
-        if any(unsupported in cipher for unsupported in self.unsupported_ciphers):
-            logging.warning(f"Cipher {cipher} may not support -salt or -pbkdf2. Skipping these options.")
+        if any(unsupported in cipher.lower() for unsupported in self.unsupported_ciphers):
+            logging.warning(f"Cipher {cipher} does not support -salt or -pbkdf2. Skipping these options.")
         else:
             if use_salt and self.settings.get('use_salt', True):
                 cmd += " -salt"
@@ -81,7 +81,11 @@ class CryptoEngine:
     def validate_cipher(self):
         """Validate if the selected cipher is supported"""
         cipher = self.settings.get('cipher_algorithm', 'aes-256-cbc')
-        if any(unsupported in cipher for unsupported in self.unsupported_ciphers):
+        if cipher == 'id-aes256-GCM':
+            logging.warning("Cipher id-aes256-GCM is not supported by OpenSSL 'enc' command. Falling back to aes-256-cbc.")
+            self.settings['cipher_algorithm'] = 'aes-256-cbc'
+            return False
+        if any(unsupported in cipher.lower() for unsupported in self.unsupported_ciphers):
             logging.error(f"Unsupported cipher selected: {cipher}. Falling back to aes-256-cbc.")
             self.settings['cipher_algorithm'] = 'aes-256-cbc'
             return False
