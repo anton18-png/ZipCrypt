@@ -83,7 +83,7 @@ ZipCrypt - это приложение для шифрования файлов 
 | binary_openssl_7zip            | Да                 | Да              | Зашифрован    | Низкая   | ⭐⭐⭐⭐⭐      |
 | binary_openssl_7zip_no_pass_enc | Да                 | Да              | Открытый      | Средняя  | ⭐⭐⭐         |
 | binary_openssl_7zip_no_pass     | Да                 | Нет             | Нет           | Высокая  | ⭐⭐          |
-| openssl_only                   | Да                 | Нет             | Н/Д           | Средняя  | ⭐⭐⭐⭐       |
+| openssl_only                   | Да                 | Нет             | Нет           | Средняя  | ⭐⭐⭐⭐       |
 | openssl_7zip                   | Да                 | Да              | Открытый      | Средняя  | ⭐⭐⭐         |
 | 7zip_no_encryption             | Нет                | Да              | Открытый      | Высокая  | ⭐⭐          |
 | no_password                    | Нет                | Нет             | Нет           | Макс.    | ⭐            |
