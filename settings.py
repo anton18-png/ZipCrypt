@@ -103,7 +103,9 @@ class SettingsTab(ttk.Frame):
         methods = [
             ('binary_openssl_7zip', 'Двоичный код -> OpenSSL -> 7zip (по умолчанию)'),
             ('openssl_only', 'Только OpenSSL'),
-            ('openssl_7zip', 'OpenSSL -> 7zip')
+            ('openssl_7zip', 'OpenSSL -> 7zip'),
+            ('7zip_no_encryption', '7zip без шифрования пароля'),  # Новый метод - пароль 7zip не шифруется
+            ('no_password', 'Без пароля')  # Новый метод - вообще без пароля
         ]
         for value, text in methods:
             ttk.Radiobutton(section_frame, text=text, variable=self.file_methods_var, value=value).pack(anchor='w', pady=2)

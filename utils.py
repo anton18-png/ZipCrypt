@@ -20,6 +20,12 @@ def setup_logging():
             ]
         )
 
+def clean_password(password):
+    """Clean password by removing all non-alphanumeric characters"""
+    import re
+    # Оставляем только буквы (включая русские), цифры и базовые спецсимволы
+    return re.sub(r'[^\w\dа-яА-Я]', '', password)
+
 def to_binary(text):
     """Convert text to binary representation"""
     binary = ' '.join(format(ord(char), '08b') for char in text)
@@ -123,16 +129,16 @@ def get_openssl_ciphers():
         logging.error(f"Error fetching OpenSSL ciphers: {e}")
         return ['aes-256-cbc']
 
-def run_command(command, capture_output=True, timeout=30):
+def run_command(command, capture_output=True, timeout=30, binary=False):
     """Run a command and return the result"""
     try:
         result = subprocess.run(
             command,
             shell=True,
             capture_output=capture_output,
-            text=True,
+            text=not binary,  # Не использовать текстовый режим для бинарных данных
             timeout=timeout,
-            encoding='utf-8'
+            encoding='utf-8' if not binary else None
         )
         return result
     except subprocess.TimeoutExpired:
@@ -216,8 +222,8 @@ def get_file_size(file_path):
 
 def validate_password(password):
     """Validate password strength"""
-    if not password:
-        return False, "Пароль не может быть пустым"
+    if password is None:  # Разрешаем None для режима без пароля
+        return True, "No password (unencrypted mode)"
     
     if len(password) < 3:
         return False, "Пароль должен содержать минимум 3 символа"

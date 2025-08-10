@@ -3,7 +3,7 @@ import subprocess
 import tempfile
 import shutil
 import logging
-from utils import to_binary, to_binary_base64, run_command, find_7zip_executable, find_openssl_executable, find_zstd_executable, create_temp_directory
+from utils import to_binary, to_binary_base64, run_command, find_7zip_executable, find_openssl_executable, find_zstd_executable, create_temp_directory, clean_password
 
 class CryptoEngine:
     def __init__(self):
@@ -76,6 +76,8 @@ class CryptoEngine:
                 if self.settings.get('use_pbkdf2_iterations', True):
                     iterations = self.settings.get('pbkdf2_iterations', 200000)
                     cmd += f" -iter {iterations}"
+        # Добавляем совместимость с различными версиями OpenSSL
+        cmd += " -md sha256"  # Используем SHA256 для совместимости
         return cmd
         
     def validate_cipher(self):
@@ -105,14 +107,169 @@ class CryptoEngine:
                 return self._encrypt_openssl_only(file_paths, password, output_path, progress_callback)
             elif method == 'openssl_7zip':
                 return self._encrypt_openssl_7zip(file_paths, password, output_path, progress_callback)
+            elif method == '7zip_no_encryption':
+                return self._encrypt_7zip_no_encryption(file_paths, password, output_path, progress_callback)
+            elif method == 'no_password':
+                return self._encrypt_no_password(file_paths, output_path, progress_callback)
             else:
                 raise ValueError(f"Unknown encryption method: {method}")
                 
         except Exception as e:
             logging.error(f"Encryption error: {e}")
             raise
+
+    def _encrypt_no_password(self, file_paths, output_path, progress_callback=None):
+        """Encrypt without password (simple compression)"""
+        temp_dir = create_temp_directory()
+        try:
+            compression_path = self.find_7zip_executable()
+            if not compression_path:
+                raise FileNotFoundError("7zip executable not found")
+                
+            compression_level = {
+                'normal': '5',
+                'fast': '1',
+                'ultra': '9'
+            }.get(self.settings['compression_method'], '5')
             
+            compression_cmd = f'"{compression_path}" a -t7z -m0=lzma2 -mx={compression_level} "{output_path}" {" ".join(file_paths)}'
+            
+            if progress_callback:
+                progress_callback(f"Архивируем без пароля")
+                
+            result = self.run_command(compression_cmd)
+            if result and result.returncode != 0:
+                raise Exception(f"Compression failed: {result.stderr}")
+                
+            return True
+            
+        finally:
+            if self.settings.get('delete_temp_files', True):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def _decrypt_no_password(self, encrypted_file, output_dir, progress_callback=None):
+        """Decrypt archive without password"""
+        try:
+            compression_path = self.find_7zip_executable()
+            if not compression_path:
+                raise FileNotFoundError("7zip executable not found")
+                
+            os.makedirs(output_dir, exist_ok=True)
+            compression_cmd = f'"{compression_path}" x "{encrypted_file}" -o"{output_dir}"'
+            
+            if progress_callback:
+                progress_callback(f"Распаковываем архив без пароля")
+                
+            result = self.run_command(compression_cmd)
+            if result and result.returncode != 0:
+                raise Exception(f"Extraction failed: {result.stderr}")
+                
+            return True
+            
+        except Exception as e:
+            logging.error(f"Decryption error: {e}")
+            raise
+
     def decrypt_files(self, encrypted_file, password, output_dir, progress_callback=None):
+        """Decrypt files using the specified method"""
+        try:
+            if not self.validate_cipher():
+                raise ValueError(f"Unsupported cipher: {self.settings['cipher_algorithm']}")
+                
+            method = self.settings['file_methods']
+            
+            if method == 'binary_openssl_7zip':
+                return self._decrypt_binary_openssl_7zip(encrypted_file, password, output_dir, progress_callback)
+            elif method == 'openssl_only':
+                return self._decrypt_openssl_only(encrypted_file, password, output_dir, progress_callback)
+            elif method == 'openssl_7zip':
+                return self._decrypt_openssl_7zip(encrypted_file, password, output_dir, progress_callback)
+            elif method == '7zip_no_encryption':
+                return self._decrypt_7zip_no_encryption(encrypted_file, password, output_dir, progress_callback)
+            elif method == 'no_password':
+                return self._decrypt_no_password(encrypted_file, output_dir, progress_callback)
+            else:
+                raise ValueError(f"Unknown decryption method: {method}")
+                
+        except Exception as e:
+            logging.error(f"Decryption error: {e}")
+            raise
+
+    def encrypt_password(self, password):
+        """Encrypt password using current settings"""
+        if not password:
+            return ""
+            
+        openssl_path = self.find_openssl_executable()
+        if not openssl_path:
+            raise FileNotFoundError("OpenSSL executable not found")
+            
+        temp_in = os.path.join(tempfile.gettempdir(), 'zipcrypt_pwd_temp_in.txt')
+        temp_out = os.path.join(tempfile.gettempdir(), 'zipcrypt_pwd_temp_out.enc')
+        
+        try:
+            # Записываем пароль во временный файл
+            with open(temp_in, 'w', encoding='utf-8') as f:
+                f.write(password)
+                
+            cmd = f'"{openssl_path}" {self.settings["cipher_algorithm"]} -a'
+            cmd = self.build_openssl_cmd(cmd, self.settings['use_salt'], self.settings['use_pbkdf2'])
+            cmd += f' -in "{temp_in}" -out "{temp_out}" -pass pass:{password}'
+            
+            # Запускаем команду без захвата вывода (так как он бинарный)
+            result = subprocess.run(cmd, shell=True, stderr=subprocess.PIPE)
+            if result.returncode != 0:
+                raise Exception(f"Password encryption failed: {result.stderr.decode('utf-8', errors='replace')}")
+                
+            # Читаем зашифрованные данные как бинарные
+            with open(temp_out, 'rb') as f:
+                encrypted = f.read().decode('utf-8')  # Декодируем только после чтения
+                
+            return encrypted
+        finally:
+            if os.path.exists(temp_in):
+                os.remove(temp_in)
+            if os.path.exists(temp_out):
+                os.remove(temp_out)
+                
+    def decrypt_password(self, encrypted_password, password):
+        """Decrypt password using current settings"""
+        if not encrypted_password or not password:
+            return ""
+            
+        openssl_path = self.find_openssl_executable()
+        if not openssl_path:
+            raise FileNotFoundError("OpenSSL executable not found")
+            
+        temp_in = os.path.join(tempfile.gettempdir(), 'zipcrypt_pwd_temp_in.enc')
+        temp_out = os.path.join(tempfile.gettempdir(), 'zipcrypt_pwd_temp_out.txt')
+        
+        try:
+            # Записываем зашифрованные данные во временный файл
+            with open(temp_in, 'w', encoding='utf-8') as f:
+                f.write(encrypted_password)
+                
+            cmd = f'"{openssl_path}" {self.settings["cipher_algorithm"]} -a -d'
+            cmd = self.build_openssl_cmd(cmd, self.settings['use_salt'], self.settings['use_pbkdf2'])
+            cmd += f' -in "{temp_in}" -out "{temp_out}" -pass pass:{password}'
+            
+            # Запускаем команду без захвата вывода
+            result = subprocess.run(cmd, shell=True, stderr=subprocess.PIPE)
+            if result.returncode != 0:
+                raise Exception(f"Password decryption failed: {result.stderr.decode('utf-8', errors='replace')}")
+                
+            # Читаем расшифрованный пароль
+            with open(temp_out, 'r', encoding='utf-8') as f:
+                decrypted = f.read().strip()
+                
+            return decrypted
+        finally:
+            if os.path.exists(temp_in):
+                os.remove(temp_in)
+            if os.path.exists(temp_out):
+                os.remove(temp_out)
+            
+    def decrypt_files1(self, encrypted_file, password, output_dir, progress_callback=None):
         """Decrypt files using the specified method"""
         try:
             if not self.validate_cipher():
@@ -132,11 +289,130 @@ class CryptoEngine:
         except Exception as e:
             logging.error(f"Decryption error: {e}")
             raise
+
+    def _encrypt_7zip_no_encryption(self, file_paths, password, output_path, progress_callback=None):
+        """Encrypt using 7zip without password encryption"""
+        temp_dir = create_temp_directory()
+        try:
+            compression_path = self.find_7zip_executable()
+            if not compression_path:
+                raise FileNotFoundError("7zip executable not found")
+                
+            # Используем пароль в открытом виде
+            clean_password_value = clean_password(password) or "defaultPass123"
+            
+            compression_level = {
+                'normal': '5',
+                'fast': '1',
+                'ultra': '9'
+            }.get(self.settings['compression_method'], '5')
+            
+            compression_cmd = f'"{compression_path}" a -t7z -m0=lzma2 -mx={compression_level} -p{clean_password_value} "{output_path}" {" ".join(file_paths)}'
+            
+            if progress_callback:
+                progress_callback(f"Архивируем через 7zip с паролем в открытом виде")
+                
+            result = self.run_command(compression_cmd)
+            if result and result.returncode != 0:
+                raise Exception(f"Compression failed: {result.stderr}")
+                
+            return True
+            
+        finally:
+            if self.settings.get('delete_temp_files', True):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def _decrypt_7zip_no_encryption(self, encrypted_file, password, output_dir, progress_callback=None):
+        """Decrypt 7zip archive with unencrypted password"""
+        try:
+            compression_path = self.find_7zip_executable()
+            if not compression_path:
+                raise FileNotFoundError("7zip executable not found")
+                
+            # Используем пароль в открытом виде
+            clean_password_value = clean_password(password) or "defaultPass123"
+            
+            os.makedirs(output_dir, exist_ok=True)
+            compression_cmd = f'"{compression_path}" x "{encrypted_file}" -o"{output_dir}" -p{clean_password_value}'
+            
+            if progress_callback:
+                progress_callback(f"Распаковываем архив 7zip с паролем в открытом виде")
+                
+            result = self.run_command(compression_cmd)
+            if result and result.returncode != 0:
+                raise Exception(f"Extraction failed: {result.stderr}")
+                
+            return True
+            
+        except Exception as e:
+            logging.error(f"Decryption error: {e}")
+            raise
+
+    def _encrypt_7zip_no_encryption(self, file_paths, password, output_path, progress_callback=None):
+        """Encrypt using 7zip without password encryption"""
+        temp_dir = create_temp_directory()
+        try:
+            compression_path = self.find_7zip_executable()
+            if not compression_path:
+                raise FileNotFoundError("7zip executable not found")
+                
+            # Используем пароль в открытом виде
+            clean_password_value = clean_password(password) or "defaultPass123"
+            
+            compression_level = {
+                'normal': '5',
+                'fast': '1',
+                'ultra': '9'
+            }.get(self.settings['compression_method'], '5')
+            
+            compression_cmd = f'"{compression_path}" a -t7z -m0=lzma2 -mx={compression_level} -p{clean_password_value} "{output_path}" {" ".join(file_paths)}'
+            
+            if progress_callback:
+                progress_callback(f"Архивируем через 7zip с паролем в открытом виде")
+                
+            result = self.run_command(compression_cmd)
+            if result and result.returncode != 0:
+                raise Exception(f"Compression failed: {result.stderr}")
+                
+            return True
+            
+        finally:
+            if self.settings.get('delete_temp_files', True):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def _decrypt_7zip_no_encryption(self, encrypted_file, password, output_dir, progress_callback=None):
+        """Decrypt 7zip archive with unencrypted password"""
+        try:
+            compression_path = self.find_7zip_executable()
+            if not compression_path:
+                raise FileNotFoundError("7zip executable not found")
+                
+            # Используем пароль в открытом виде
+            clean_password_value = clean_password(password) or "defaultPass123"
+            
+            os.makedirs(output_dir, exist_ok=True)
+            compression_cmd = f'"{compression_path}" x "{encrypted_file}" -o"{output_dir}" -p{clean_password_value}'
+            
+            if progress_callback:
+                progress_callback(f"Распаковываем архив 7zip с паролем в открытом виде")
+                
+            result = self.run_command(compression_cmd)
+            if result and result.returncode != 0:
+                raise Exception(f"Extraction failed: {result.stderr}")
+                
+            return True
+            
+        except Exception as e:
+            logging.error(f"Decryption error: {e}")
+            raise
             
     def _encrypt_binary_openssl_7zip(self, file_paths, password, output_path, progress_callback=None):
         """Encrypt using binary conversion -> OpenSSL -> 7zip method"""
         temp_dir = create_temp_directory()
         try:
+            # Шифруем пароль перед использованием в 7zip
+            encrypted_password = self.encrypt_password(password)
+            
             binary_password = to_binary(password)
             binary_base64 = to_binary_base64(password)
             step1_msg = f"переводим пароль {password} в двоичный код -> {binary_password} -> base64: {binary_base64}"
@@ -202,9 +478,105 @@ class CryptoEngine:
                     'fast': '1',
                     'ultra': '9'
                 }.get(self.settings['compression_method'], '5')
-                compression_cmd = f'"{compression_path}" a -t7z -m0=lzma2 -mx={compression_level} -p{password} "{output_path}" "{encrypted_files_dir}\\*"'
+                # Используем зашифрованный пароль вместо оригинального
+                compression_cmd = f'"{compression_path}" a -t7z -m0=lzma2 -mx={compression_level} -p{encrypted_password} "{output_path}" "{encrypted_files_dir}\\*"'
             
             step3_msg = f"архивируем и зашифровываем зашифрованные файлы через {'zstd' if self.settings.get('7zip_version') == '24.09_zstandard' else '7zip'} ({compression_cmd})"
+            self.log_step(step3_msg)
+            if progress_callback:
+                progress_callback(step3_msg)
+                
+            result = self.run_command(compression_cmd)
+            if result and result.returncode != 0:
+                raise Exception(f"Compression failed: {result.stderr}")
+                
+            return True
+            
+        finally:
+            if self.settings.get('delete_temp_files', True):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+    
+    def _encrypt_binary_openssl_7zip(self, file_paths, password, output_path, progress_callback=None):
+        """Encrypt using binary conversion -> OpenSSL -> 7zip method"""
+        temp_dir = create_temp_directory()
+        try:
+            # Шифруем пароль для OpenSSL
+            binary_password = to_binary(password)
+            binary_base64 = to_binary_base64(password)
+            
+            # Очищаем пароль для 7zip (только буквы/цифры)
+            clean_7zip_password = clean_password(password)
+            if not clean_7zip_password:
+                clean_7zip_password = "defaultPass123"  # fallback
+                
+            step1_msg = f"переводим пароль {password} в двоичный код -> {binary_password} -> base64: {binary_base64}"
+            self.log_step(step1_msg)
+            if progress_callback:
+                progress_callback(step1_msg)
+                
+            openssl_path = self.find_openssl_executable()
+            if not openssl_path:
+                raise FileNotFoundError("OpenSSL executable not found")
+                
+            encrypted_files_dir = os.path.join(temp_dir, 'encrypted_files')
+            os.makedirs(encrypted_files_dir)
+            
+            for file_path in file_paths:
+                if os.path.isfile(file_path):
+                    original_name = os.path.basename(file_path)
+                    encrypted_file = os.path.join(encrypted_files_dir, original_name + '.enc')
+                    file_openssl_cmd = f'"{openssl_path}" {self.settings["cipher_algorithm"]} -a'
+                    file_openssl_cmd = self.build_openssl_cmd(file_openssl_cmd, self.settings['use_salt'], self.settings['use_pbkdf2'])
+                    file_openssl_cmd += f' -in "{file_path}" -out "{encrypted_file}" -pass pass:{binary_base64}'
+                    
+                    step2_msg = f"шифруем файл {original_name} паролем {binary_base64} через openssl"
+                    self.log_step(step2_msg)
+                    if progress_callback:
+                        progress_callback(step2_msg)
+                        
+                    result = self.run_command(file_openssl_cmd)
+                    if result and result.returncode != 0:
+                        raise Exception(f"File encryption failed: {result.stderr}")
+                        
+                elif os.path.isdir(file_path):
+                    original_name = os.path.basename(file_path)
+                    archive_path = os.path.join(temp_dir, f"{original_name}.tar.gz")
+                    tar_cmd = f'tar -czf "{archive_path}" -C "{os.path.dirname(file_path)}" "{os.path.basename(file_path)}"'
+                    self.run_command(tar_cmd)
+                    
+                    encrypted_archive = os.path.join(encrypted_files_dir, f"{original_name}.tar.gz.enc")
+                    archive_openssl_cmd = f'"{openssl_path}" {self.settings["cipher_algorithm"]} -a'
+                    archive_openssl_cmd = self.build_openssl_cmd(archive_openssl_cmd, self.settings['use_salt'], self.settings['use_pbkdf2'])
+                    archive_openssl_cmd += f' -in "{archive_path}" -out "{encrypted_archive}" -pass pass:{binary_base64}'
+                    
+                    step2_msg = f"шифруем архив {original_name}.tar.gz паролем {binary_base64} через openssl"
+                    self.log_step(step2_msg)
+                    if progress_callback:
+                        progress_callback(step2_msg)
+                        
+                    result = self.run_command(archive_openssl_cmd)
+                    if result and result.returncode != 0:
+                        raise Exception(f"Archive encryption failed: {result.stderr}")
+                        
+            compression_path = self.find_7zip_executable()
+            if not compression_path and self.settings.get('7zip_version') == '24.09_zstandard':
+                compression_path = self.find_zstd_executable()
+                if not compression_path:
+                    raise FileNotFoundError("Zstandard executable not found")
+                compression_cmd = f'"{compression_path}" -z "{encrypted_files_dir}" -o "{output_path}"'
+            else:
+                if not compression_path:
+                    raise FileNotFoundError("7zip executable not found")
+                compression_level = {
+                    'normal': '5',
+                    'fast': '1',
+                    'ultra': '9'
+                }.get(self.settings['compression_method'], '5')
+                
+                # Используем очищенный пароль для 7zip
+                compression_cmd = f'"{compression_path}" a -t7z -m0=lzma2 -mx={compression_level} -p{clean_7zip_password} "{output_path}" "{encrypted_files_dir}\\*"'
+            
+            step3_msg = f"архивируем через 7zip с очищенным паролем (только буквы/цифры)"
             self.log_step(step3_msg)
             if progress_callback:
                 progress_callback(step3_msg)
@@ -223,6 +595,11 @@ class CryptoEngine:
         """Decrypt using binary conversion -> OpenSSL -> 7zip method"""
         temp_dir = create_temp_directory()
         try:
+            # Очищаем пароль для 7zip
+            clean_7zip_password = clean_password(password)
+            if not clean_7zip_password:
+                clean_7zip_password = "defaultPass123"  # fallback
+                
             compression_path = self.find_7zip_executable()
             if not compression_path and self.settings.get('7zip_version') == '24.09_zstandard':
                 compression_path = self.find_zstd_executable()
@@ -236,9 +613,9 @@ class CryptoEngine:
                     raise FileNotFoundError("7zip executable not found")
                 extracted_dir = os.path.join(temp_dir, 'extracted')
                 os.makedirs(extracted_dir)
-                compression_cmd = f'"{compression_path}" x "{encrypted_file}" -o"{extracted_dir}" -p{password}'
+                compression_cmd = f'"{compression_path}" x "{encrypted_file}" -o"{extracted_dir}" -p{clean_7zip_password}'
             
-            step1_msg = f"распаковываем архив через {'zstd' if self.settings.get('7zip_version') == '24.09_zstandard' else '7zip'} ({compression_cmd})"
+            step1_msg = f"распаковываем архив через 7zip с очищенным паролем"
             self.log_step(step1_msg)
             if progress_callback:
                 progress_callback(step1_msg)
@@ -246,6 +623,9 @@ class CryptoEngine:
             result = self.run_command(compression_cmd)
             if result and result.returncode != 0:
                 raise Exception(f"Extraction failed: {result.stderr}")
+            
+        # Остальная часть метода остается без изменений
+        # ...
                 
             binary_password = to_binary(password)
             binary_base64 = to_binary_base64(password)
