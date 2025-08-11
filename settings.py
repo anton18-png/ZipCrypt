@@ -101,42 +101,26 @@ class SettingsTab(ttk.Frame):
         section_frame.pack(fill='x', pady=5)
         self.file_methods_var = ttk.StringVar(value=self.settings['file_methods'])
         methods = [
-            ('binary_openssl_7zip', 'Двоичный код -> OpenSSL -> 7zip (по умолчанию)'),
-            ('openssl_only', 'Только OpenSSL'),
-            ('openssl_7zip', 'OpenSSL -> 7zip'),
-            ('7zip_no_encryption', '7zip без шифрования пароля'),  # Новый метод - пароль 7zip не шифруется
-            ('no_password', 'Без пароля')  # Новый метод - вообще без пароля
+            ('binary_openssl_7zip', 'Двоичный код -> Base64 -> OpenSSL -> 7zip (по умолчанию)'),
+            # ('binary_openssl_7zip_no_pass_enc', 'Двоичный код -> OpenSSL -> 7zip (без шифр. пароля)'),
+            ('binary_openssl_7zip_no_pass', 'Двоичный код -> Base64 -> OpenSSL -> 7zip (без пароля)'),
+            # ('secure_openssl_7zip', 'OpenSSL -> 7zip (шифр. пароля)'),
+            # ('openssl_7zip', 'OpenSSL -> 7zip (без шифр. пароля)'),
+            ('openssl_only', 'Только OpenSSL (без шифр. пароля)'),
         ]
         for value, text in methods:
             ttk.Radiobutton(section_frame, text=text, variable=self.file_methods_var, value=value).pack(anchor='w', pady=2)
         
         ttk.Label(section_frame, text="Алгоритм шифрования:").pack(anchor='w', pady=2)
         self.cipher_algorithm_var = ttk.StringVar(value=self.settings['cipher_algorithm'])
-
-        # # 🔒 Только те AES-алгоритмы, которые точно есть в текущей сборке OpenSSL
-        # available_aes_algorithms = [
-        #     'aes-128-cbc',
-        #     'aes-192-cbc',
-        #     'aes-256-cbc',
-        #     'aes-128-ecb',
-        #     'aes-192-ecb',
-        #     'aes-256-ecb'
-        # ]
-        # available_aes_algorithms = ['aes-256-cbc']  # один безопасный режим по умолчанию
         available_aes_algorithms = [
             'aes-128-cbc',
             'aes-192-cbc',
             'aes-256-cbc'
         ]
-
-        # Фильтруем: оставляем только те, что есть и в self.ciphers (на случай, если пользователь подменил)
         filtered_aes_algorithms = [algo for algo in available_aes_algorithms if algo in self.ciphers]
-
-        # Если ни один AES не найден — используем fallback
         if not filtered_aes_algorithms:
-            filtered_aes_algorithms = ['aes-256-cbc']  # аварийный вариант
-
-        # Если текущий алгоритм из настроек не в списке — выбираем дефолтный
+            filtered_aes_algorithms = ['aes-256-cbc']
         if self.settings['cipher_algorithm'] not in filtered_aes_algorithms:
             default_algo = 'aes-256-cbc'
             if default_algo in filtered_aes_algorithms:
@@ -145,8 +129,6 @@ class SettingsTab(ttk.Frame):
                 self.cipher_algorithm_var.set(filtered_aes_algorithms[0])
             else:
                 self.cipher_algorithm_var.set('')
-
-        # Создаём Combobox
         ttk.Combobox(section_frame, textvariable=self.cipher_algorithm_var, 
                     values=filtered_aes_algorithms).pack(fill='x', pady=2)
         
@@ -179,7 +161,7 @@ class SettingsTab(ttk.Frame):
             ('normal', 'Обычное сжатие'),
             ('high', 'Высокое сжатие'),
             ('ultra', 'Максимальное сжатие'),
-            ('custom', 'Пользовательское сжатие')
+            # ('custom', 'Пользовательское сжатие')
         ]
         for value, text in compression_methods:
             ttk.Radiobutton(section_frame, text=text, variable=self.compression_method_var, value=value).pack(anchor='w', pady=2)
@@ -213,7 +195,7 @@ class SettingsTab(ttk.Frame):
         ttk.Combobox(section_frame, textvariable=self.theme_var, values=themes).pack(fill='x')
 
     def create_telegram_section(self, parent):
-        """Create Telegram HRU"""
+        """Create Telegram settings section"""
         section_frame = ttk.Labelframe(parent, text="Настройки Telegram", padding=10)
         section_frame.pack(fill='x', pady=5)
         ttk.Label(section_frame, text="Токен:").pack(anchor='w')
@@ -301,7 +283,6 @@ class SettingsTab(ttk.Frame):
                 logging.error("Invalid Telegram token format")
                 return False
 
-            # Validate PBKDF2 iterations if enabled
             if self.use_pbkdf2_iterations_var.get():
                 try:
                     iterations = int(self.pbkdf2_iterations_var.get())
@@ -312,7 +293,7 @@ class SettingsTab(ttk.Frame):
                     logging.error("Invalid PBKDF2 iterations value")
                     return False
             else:
-                iterations = 200000  # Default value when iterations are disabled
+                iterations = 200000
 
             new_settings = {
                 'file_methods': self.file_methods_var.get(),

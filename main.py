@@ -199,12 +199,13 @@ class ZipCryptApp:
                     messagebox.showerror("Ошибка", f"Ошибка при проверке мастер-пароля: {str(e)}")
                     continue
         else:
-            password = simpledialog.askstring(
-                "Мастер-пароль", 
-                "Мастер-пароль не найден. Введите новый мастер-пароль (или оставьте пустым для пропуска):", 
-                show='*', 
-                parent=self.root
-            )
+            # password = simpledialog.askstring(
+            #     "Мастер-пароль", 
+            #     "Мастер-пароль не найден. Введите новый мастер-пароль (или оставьте пустым для пропуска):", 
+            #     show='*', 
+            #     parent=self.root
+            # )
+            password = 0
             if password is None:
                 logging.info("Master password creation canceled")
                 return None
