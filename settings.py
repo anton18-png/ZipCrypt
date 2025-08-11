@@ -101,12 +101,12 @@ class SettingsTab(ttk.Frame):
         section_frame.pack(fill='x', pady=5)
         self.file_methods_var = ttk.StringVar(value=self.settings['file_methods'])
         methods = [
-            ('binary_openssl_7zip', 'Двоичный код -> Base64 -> OpenSSL -> 7zip (по умолчанию)'),
-            # ('binary_openssl_7zip_no_pass_enc', 'Двоичный код -> OpenSSL -> 7zip (без шифр. пароля)'),
-            ('binary_openssl_7zip_no_pass', 'Двоичный код -> Base64 -> OpenSSL -> 7zip (без пароля)'),
+            # ('binary_openssl_7zip', 'Двоичный код -> Base64 -> OpenSSL -> 7zip (по умолчанию)'),
+            # ('binary_openssl_7zip_no_pass_enc', 'Двоичный код -> Base64 -> OpenSSL -> 7zip (без шифр. пароля)'),
+            ('binary_openssl_7zip_no_pass', 'ZipCrypt'),
             # ('secure_openssl_7zip', 'OpenSSL -> 7zip (шифр. пароля)'),
             # ('openssl_7zip', 'OpenSSL -> 7zip (без шифр. пароля)'),
-            ('openssl_only', 'Только OpenSSL (без шифр. пароля)'),
+            ('openssl_only', 'OpenSSL'),
         ]
         for value, text in methods:
             ttk.Radiobutton(section_frame, text=text, variable=self.file_methods_var, value=value).pack(anchor='w', pady=2)
